@@ -5,6 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useCart } from "@/context/CartContext";
 import { ShoppingCart, User, Menu, X } from "lucide-react";
 import { useState } from "react";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export default function Navbar() {
   const { user, role, logout } = useAuth();
@@ -21,6 +22,7 @@ export default function Navbar() {
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center gap-6">
+            <ThemeToggle />
             <Link href="/products" className="text-sm font-medium hover:text-indigo-600 transition-colors">
               Products
             </Link>
@@ -88,6 +90,10 @@ export default function Navbar() {
       {/* Mobile Menu */}
       {isMenuOpen && (
         <div className="md:hidden border-t p-4 space-y-4 bg-white dark:bg-zinc-900">
+          <div className="flex justify-between items-center py-2">
+             <span className="text-sm font-medium">Appearance</span>
+             <ThemeToggle />
+          </div>
           <Link 
             href="/products" 
             className="block text-sm font-medium hover:text-indigo-600"
@@ -107,35 +113,58 @@ export default function Navbar() {
               </span>
             )}
           </Link>
+          {role === 'admin' && (
+             <Link 
+               href="/admin" 
+               className="block text-sm font-medium text-indigo-600 font-bold"
+               onClick={() => setIsMenuOpen(false)}
+             >
+               Admin Panel
+             </Link>
+          )}
+
           {user ? (
-            <>
+            <div className="pt-4 border-t dark:border-zinc-800">
+              <div className="flex items-center gap-3 mb-3">
+                {user.photoURL ? (
+                  <img src={user.photoURL} alt={user.displayName || "User"} className="h-8 w-8 rounded-full" />
+                ) : (
+                  <div className="bg-zinc-100 p-1 rounded-full dark:bg-zinc-800">
+                    <User className="h-5 w-5" />
+                  </div>
+                )}
+                <span className="text-sm font-medium">{user.displayName || user.email}</span>
+              </div>
               <Link 
-                href="/profile" 
-                className="block text-sm font-medium hover:text-indigo-600"
+                href="/profile"
+                className="block text-sm font-medium mb-3 hover:text-indigo-600"
                 onClick={() => setIsMenuOpen(false)}
               >
                 Profile
               </Link>
               <button 
-                onClick={() => { logout(); setIsMenuOpen(false); }}
-                className="block w-full text-left text-sm font-medium text-red-500 hover:text-red-600"
+                onClick={() => {
+                  logout();
+                  setIsMenuOpen(false);
+                }}
+                className="text-sm font-medium text-red-500 hover:text-red-600"
               >
                 Logout
               </button>
-            </>
+            </div>
           ) : (
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2 pt-4 border-t dark:border-zinc-800">
               <Link
                 href="/login"
+                className="text-sm font-medium hover:text-indigo-600"
                 onClick={() => setIsMenuOpen(false)}
-                className="block w-full rounded-md border border-zinc-200 px-4 py-2 text-center text-sm font-medium hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800"
               >
                 Login
               </Link>
               <Link
                 href="/register"
+                className="text-sm font-medium text-indigo-600"
                 onClick={() => setIsMenuOpen(false)}
-                className="block w-full rounded-md bg-indigo-600 px-4 py-2 text-center text-sm font-medium text-white hover:bg-indigo-700"
               >
                 Register
               </Link>
