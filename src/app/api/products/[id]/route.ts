@@ -1,0 +1,85 @@
+import { NextResponse } from 'next/server';
+import dbConnect from '@/lib/mongodb';
+import Product from '@/models/Product';
+import User from '@/models/User';
+
+// Helper to check if user is admin
+async function isAdmin(request: Request) {
+  const uid = request.headers.get('x-user-uid');
+  if (!uid) return false;
+  
+  await dbConnect();
+  const user = await User.findOne({ firebaseUid: uid });
+  return user && user.role === 'admin';
+}
+
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    await dbConnect();
+    const { id } = await params;
+    const product = await Product.findById(id);
+    
+    if (!product) {
+      return NextResponse.json({ success: false, error: 'Product not found' }, { status: 404 });
+    }
+
+    return NextResponse.json({ success: true, data: product });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 400 });
+  }
+}
+
+export async function PUT(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    if (!await isAdmin(request)) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
+    await dbConnect();
+    const { id } = await params;
+    const body = await request.json();
+    
+    const product = await Product.findByIdAndUpdate(id, body, {
+      new: true,
+      runValidators: true,
+    });
+
+    if (!product) {
+      return NextResponse.json({ success: false, error: 'Product not found' }, { status: 404 });
+    }
+
+    return NextResponse.json({ success: true, data: product });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 400 });
+  }
+}
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    if (!await isAdmin(request)) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
+    await dbConnect();
+    const { id } = await params;
+    
+    const product = await Product.findByIdAndDelete(id);
+
+    if (!product) {
+      return NextResponse.json({ success: false, error: 'Product not found' }, { status: 404 });
+    }
+
+    return NextResponse.json({ success: true, data: {} });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 400 });
+  }
+}
