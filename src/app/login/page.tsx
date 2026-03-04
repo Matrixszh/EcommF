@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -18,10 +18,12 @@ const loginSchema = z.object({
 
 type LoginFormValues = z.infer<typeof loginSchema>;
 
-export default function LoginPage() {
+function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirect = searchParams.get("redirect") || "/";
   const { signInWithGoogle } = useAuth();
 
   const {
@@ -37,7 +39,7 @@ export default function LoginPage() {
     setError(null);
     try {
       await signInWithEmailAndPassword(auth, data.email, data.password);
-      router.push("/");
+      router.push(redirect);
     } catch (err: any) {
       console.error(err);
       if (err.code === "auth/invalid-credential") {
@@ -61,7 +63,7 @@ export default function LoginPage() {
     setError(null);
     try {
       await signInWithGoogle();
-      router.push("/");
+      router.push(redirect);
     } catch (err) {
       console.error(err);
       setError("Failed to sign in with Google.");
@@ -206,5 +208,19 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+        </div>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   );
 }

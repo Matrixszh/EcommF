@@ -1,5 +1,6 @@
 import Link from "next/link";
 import ProductCard from "@/components/ProductCard";
+import ScrollReveal from "@/components/ScrollReveal";
 import { ArrowRight } from "lucide-react";
 import dbConnect from "@/lib/mongodb";
 import Product from "@/models/Product";
@@ -101,6 +102,18 @@ export default async function Home() {
             </Link>
           </div>
         </div>
+      </section>
+
+      <section className="container mx-auto px-4 md:px-6 py-16 text-center">
+        <ScrollReveal
+          baseOpacity={0.1}
+          enableBlur
+          baseRotation={3}
+          blurStrength={4}
+          containerClassName="text-3xl md:text-5xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50 leading-tight"
+        >
+          When does a man die? When he is hit by a bullet? No! When he suffers a disease? No! When he ate a soup made out of a poisonous mushroom? No! A man dies when he is forgotten!
+        </ScrollReveal>
       </section>
 
       {/* Featured Products */}
