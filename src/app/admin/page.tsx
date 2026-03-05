@@ -13,8 +13,9 @@ export default function AdminDashboard() {
     async function fetchStats() {
       if (!user) return;
       try {
+        const token = await user.getIdToken();
         const res = await fetch("/api/admin/stats", {
-          headers: { "x-user-uid": user.uid }
+          headers: { "Authorization": `Bearer ${token}` }
         });
         const data = await res.json();
         if (data.success) {

@@ -9,7 +9,9 @@ graph TD
   Browser[User Browser] --> Next[Next.js App Router]
   Next --> Firebase[Firebase Authentication]
   Next --> Mongo[MongoDB Atlas via Mongoose]
+  Next --> Redis[Redis Cache (Upstash/Custom)]
   Next --> Razorpay[Razorpay Orders API]
+  Next --> Cloudinary[Cloudinary API]
 
   subgraph Client[Client Runtime (Browser)]
     UI[React UI Components]
@@ -33,21 +35,24 @@ graph TD
 
   RSC --> Models
   API --> Models
+  API --> Cloudinary
 ```
 
 ### What runs where
 
 - Browser: UI, theme switching, cart persistence, Firebase sign-in, Razorpay checkout modal.
-- Next.js server: server-side product reads (RSC), all API routes (orders/products/admin/upload/payment), Razorpay server SDK call, MongoDB reads/writes.
-- External services: Firebase Auth (identity), MongoDB (data), Razorpay (payments).
+- Next.js server: server-side product reads (RSC + Redis), all API routes (orders/products/admin/upload/payment), Razorpay server SDK call, MongoDB reads/writes, Cloudinary uploads.
+- External services: Firebase Auth (identity), MongoDB (data), Razorpay (payments), Cloudinary (images), Redis (cache).
 
 ## 2. Tech Stack (as implemented)
 
 - Next.js App Router (Next 16) + React + TypeScript
 - Styling: Tailwind CSS
-- Auth: Firebase Authentication (client SDK)
+- Auth: Firebase Authentication (client SDK + Admin SDK)
 - Database: MongoDB Atlas via Mongoose
+- Caching: Redis (ioredis + ISR)
 - Payments: Razorpay (server order creation + client checkout.js + server signature verification)
+- Images: Cloudinary (storage + CDN)
 - Theme: next-themes + theme-toggles
 - Animation: GSAP (used by ScrollReveal)
 
@@ -99,10 +104,10 @@ Relevant code:
 
 ### 3.3 Page (route) breakdown and logic
 
-**Public browsing**
-- `/` Home: server component pulls latest products from MongoDB and renders ProductCard grid: [page.tsx](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/page.tsx)
-- `/products` Listing: server component queries MongoDB by URL search params: [products/page.tsx](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/products/page.tsx)
-- `/product/[id]` Details: server component reads product and renders AddToCartButton: [product/[id]/page.tsx](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/product/%5Bid%5D/page.tsx)
+**Public browsing (Cached)**
+- `/` Home: ISR (revalidate=60s) + Redis cache; fetches latest products: [page.tsx](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/page.tsx)
+- `/products` Listing: ISR (revalidate=60s) + Redis cache; dynamic keys based on search/category: [products/page.tsx](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/products/page.tsx)
+- `/product/[id]` Details: ISR (revalidate=60s) + Redis cache; fetches product by ID: [product/[id]/page.tsx](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/product/%5Bid%5D/page.tsx)
 
 **Cart + Checkout**
 - `/cart`: client page driven by CartContext: [cart/page.tsx](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/cart/page.tsx)
@@ -132,7 +137,8 @@ Relevant code:
 
 ### 4.1 Shared infrastructure
 
-- MongoDB connector with global connection caching (prevents reconnect loops in dev): [mongodb.ts](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/lib/mongodb.ts)
+- Redis connector (singleton client + cache wrapper): [redis.ts](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/lib/redis.ts)
+- MongoDB connector with global connection caching: [mongodb.ts](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/lib/mongodb.ts)
 - Mongoose models (schema definitions): [models/](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/models)
 
 ### 4.2 API surface (current)
@@ -195,6 +201,7 @@ sequenceDiagram
   participant Next as Next.js API
   participant Razor as Razorpay
   participant Mongo as MongoDB
+  participant Redis as Redis Cache
 
   Browser->>Next: POST /api/payment/razorpay { amount, currency }
   Next->>Razor: Create Razorpay order (server SDK)
@@ -210,12 +217,40 @@ sequenceDiagram
   Next->>Mongo: Decrement product stock (per item)
   Next->>Mongo: Create Order document
   Mongo-->>Next: Order created
+  Next->>Redis: Invalidate/Update relevant cache (optional/future)
   Next-->>Browser: { success: true, data: order }
 ```
 
+### 5.3 Caching Strategy (ISR + Redis)
+
+```mermaid
+sequenceDiagram
+  participant User
+  participant Next as Next.js Server (ISR)
+  participant Redis as Redis Cache
+  participant Mongo as MongoDB
+
+  User->>Next: GET /products (Page Request)
+  
+  alt Page is Stale (>60s) or New
+    Next->>Redis: GET key (e.g. "products:all")
+    alt Cache Hit
+      Redis-->>Next: JSON data
+    else Cache Miss
+      Next->>Mongo: Query DB
+      Mongo-->>Next: Data
+      Next->>Redis: SET key, Data, EX 60s
+    end
+    Next-->>User: Rendered HTML
+  else Page is Fresh
+    Next-->>User: Cached HTML (Edge/Disk)
+  end
+```
+
 Notes:
-- Stock decrement and order creation run server-side in [orders/route.ts](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/api/orders/route.ts#L84-L133), including rollback if stock update or order creation fails.
-- Client cart clearing happens after the order API call succeeds: [checkout/page.tsx](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/checkout/page.tsx#L114-L121)
+- `revalidate = 60` is set on Home, Product List, and Product Detail pages.
+- `getOrSetCache` helper wraps DB calls to ensure Redis is checked first.
+- If Redis is down, it falls back to MongoDB transparently.
 
 ## 6. Database Documentation (MongoDB + Mongoose)
 
@@ -224,7 +259,6 @@ Notes:
 - `products` (Product)
 - `orders` (Order)
 - `users` (User)
-- `images` (Image; binary storage)
 
 ### 6.2 Entity relationships (current)
 
@@ -368,6 +402,12 @@ This app relies on `.env.local` for runtime configuration. The current code refe
   - `RAZORPAY_KEY_ID` (server)
   - `RAZORPAY_KEY_SECRET` (server)
   - `NEXT_PUBLIC_RAZORPAY_KEY_ID` (client)
+- Cloudinary:
+  - `CLOUDINARY_CLOUD_NAME`
+  - `CLOUDINARY_API_KEY`
+  - `CLOUDINARY_API_SECRET`
+- Redis (server):
+  - `REDIS_URL`
 
 ## 8. Operational Notes (Admin + Seeding)
 

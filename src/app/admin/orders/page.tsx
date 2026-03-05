@@ -54,9 +54,10 @@ export default function AdminOrders() {
   const fetchOrders = async () => {
     if (!user) return;
     try {
+      const token = await user.getIdToken();
       const res = await fetch("/api/orders", {
         headers: {
-          "x-user-uid": user.uid,
+          "Authorization": `Bearer ${token}`,
         },
       });
       const data = await res.json();

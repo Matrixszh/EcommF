@@ -1,15 +1,11 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Product from '@/models/Product';
-import User from '@/models/User';
+import { getAuthUser } from '@/lib/auth-server';
 
 // Helper to check if user is admin
 async function isAdmin(request: Request) {
-  const uid = request.headers.get('x-user-uid');
-  if (!uid) return false;
-  
-  await dbConnect();
-  const user = await User.findOne({ firebaseUid: uid });
+  const user = await getAuthUser(request);
   return user && user.role === 'admin';
 }
 

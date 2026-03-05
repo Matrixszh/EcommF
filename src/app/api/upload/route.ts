@@ -1,11 +1,14 @@
 import { NextResponse } from 'next/server';
-import dbConnect from '@/lib/mongodb';
-import ImageModel from '@/models/Image';
+import { v2 as cloudinary } from 'cloudinary';
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 export async function POST(request: Request) {
   try {
-    await dbConnect();
-    
     const formData = await request.formData();
     const file = formData.get('file') as File;
 
@@ -13,21 +16,23 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
     }
 
-    const buffer = Buffer.from(await file.arrayBuffer());
-    
-    const image = await ImageModel.create({
-      data: buffer,
-      contentType: file.type,
-      name: file.name
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    const result = await new Promise<any>((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        { folder: 'products' },
+        (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
+        }
+      );
+      uploadStream.end(buffer);
     });
 
-    // Return the URL that can be used to view this image
-    // Assuming the app is hosted at root or we can use relative paths
-    const imageUrl = `/api/images/${image._id}`;
-
-    return NextResponse.json({ success: true, url: imageUrl });
+    return NextResponse.json({ success: true, url: result.secure_url });
   } catch (error: any) {
     console.error('Upload error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: error.message || 'Upload failed' }, { status: 500 });
   }
 }

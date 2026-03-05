@@ -4,17 +4,25 @@ import Image from "next/image";
 import Link from "next/link";
 import { ArrowLeft, Star } from "lucide-react";
 import AddToCartButton from "@/components/AddToCartButton";
+import { getOrSetCache } from "@/lib/redis";
+
+// Enable ISR with 60-second revalidation
+export const revalidate = 60;
 
 async function getProduct(id: string) {
-  try {
-    await dbConnect();
-    const product = await Product.findById(id).lean();
-    if (!product) return null;
-    return JSON.parse(JSON.stringify(product));
-  } catch (error) {
-    console.error("Error fetching product:", error);
-    return null;
-  }
+  const cacheKey = `product:${id}`;
+  
+  return getOrSetCache(cacheKey, async () => {
+    try {
+      await dbConnect();
+      const product = await Product.findById(id).lean();
+      if (!product) return null;
+      return JSON.parse(JSON.stringify(product));
+    } catch (error) {
+      console.error("Error fetching product:", error);
+      return null;
+    }
+  });
 }
 
 export default async function ProductPage({ params }: { params: Promise<{ id: string }> }) {

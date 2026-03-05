@@ -3,30 +3,39 @@ import Product from '@/models/Product';
 import ProductCard from "@/components/ProductCard";
 import Link from "next/link";
 import { Search } from "lucide-react";
+import { getOrSetCache } from "@/lib/redis";
+
+// Enable ISR with 60-second revalidation (applies when no search params)
+export const revalidate = 60;
 
 async function getProducts(searchParams: { [key: string]: string | string[] | undefined }) {
-  await dbConnect();
   const category = searchParams.category as string;
   const search = searchParams.search as string;
   
-  const query: any = {};
-  if (category) {
-    query.category = category;
-  }
-  if (search) {
-    query.$or = [
-      { name: { $regex: search, $options: 'i' } },
-      { description: { $regex: search, $options: 'i' } },
-    ];
-  }
+  const cacheKey = `products:category=${category || 'all'}:search=${search || 'none'}`;
 
-  try {
-    const products = await Product.find(query).sort({ createdAt: -1 }).lean();
-    return JSON.parse(JSON.stringify(products));
-  } catch (error) {
-    console.error("Error fetching products:", error);
-    return [];
-  }
+  return getOrSetCache(cacheKey, async () => {
+    await dbConnect();
+    
+    const query: any = {};
+    if (category) {
+      query.category = category;
+    }
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    try {
+      const products = await Product.find(query).sort({ createdAt: -1 }).lean();
+      return JSON.parse(JSON.stringify(products));
+    } catch (error) {
+      console.error("Error fetching products:", error);
+      return [];
+    }
+  });
 }
 
 export default async function ProductsPage({

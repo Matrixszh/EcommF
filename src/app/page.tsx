@@ -4,66 +4,70 @@ import ScrollReveal from "@/components/ScrollReveal";
 import { ArrowRight } from "lucide-react";
 import dbConnect from "@/lib/mongodb";
 import Product from "@/models/Product";
+import { getOrSetCache } from "@/lib/redis";
 
-// Force dynamic rendering if we want fresh data on every request, 
-// or use revalidate for ISR. For now, let's stick to default caching behavior 
-// or opt-out if we want real-time updates.
-export const dynamic = 'force-dynamic'; 
+// Enable ISR with 60-second revalidation
+export const revalidate = 60;
 
 async function getFeaturedProducts() {
-  try {
-    await dbConnect();
-    
-    // Fetch 6 latest products
-    const products = await Product.find({})
-      .sort({ createdAt: -1 })
-      .limit(6)
-      .lean();
+  const cacheKey = 'featured_products';
+  
+  // Use Redis cache wrapper
+  return getOrSetCache(cacheKey, async () => {
+    try {
+      await dbConnect();
+      
+      // Fetch 6 latest products
+      const products = await Product.find({})
+        .sort({ createdAt: -1 })
+        .limit(6)
+        .lean();
 
-    // Serialize to plain JSON (handles ObjectId and Date)
-    return JSON.parse(JSON.stringify(products));
-  } catch (error) {
-    console.error("Error fetching products from DB:", error);
-    // Return mock data if DB connection fails
-    return [
-      {
-        _id: "1",
-        name: "Wireless Headphones",
-        description: "Premium noise-canceling headphones for immersive audio.",
-        price: 299.99,
-        images: ["https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800&q=80"],
-        category: "electronics",
-        rating: 4.8
-      },
-      {
-        _id: "2",
-        name: "Smart Watch Series 5",
-        description: "Stay connected and track your health with style.",
-        price: 399.00,
-        images: ["https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80"],
-        category: "electronics",
-        rating: 4.5
-      },
-      {
-        _id: "3",
-        name: "Ergonomic Chair",
-        description: "Designed for comfort during long work hours.",
-        price: 199.50,
-        images: ["https://images.unsplash.com/photo-1592078615290-033ee584e267?w=800&q=80"],
-        category: "furniture",
-        rating: 4.7
-      },
-      {
-        _id: "4",
-        name: "Running Shoes",
-        description: "Lightweight and durable for your daily runs.",
-        price: 129.99,
-        images: ["https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=800&q=80"],
-        category: "sports",
-        rating: 4.6
-      }
-    ];
-  }
+      // Serialize to plain JSON (handles ObjectId and Date)
+      return JSON.parse(JSON.stringify(products));
+    } catch (error) {
+      console.error("Error fetching products from DB:", error);
+      // Return mock data if DB connection fails
+      return [
+        {
+          _id: "1",
+          name: "Wireless Headphones",
+          description: "Premium noise-canceling headphones for immersive audio.",
+          price: 299.99,
+          images: ["https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800&q=80"],
+          category: "electronics",
+          rating: 4.8
+        },
+        {
+          _id: "2",
+          name: "Smart Watch Series 5",
+          description: "Stay connected and track your health with style.",
+          price: 399.00,
+          images: ["https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80"],
+          category: "electronics",
+          rating: 4.5
+        },
+        {
+          _id: "3",
+          name: "Ergonomic Chair",
+          description: "Designed for comfort during long work hours.",
+          price: 199.50,
+          images: ["https://images.unsplash.com/photo-1592078615290-033ee584e267?w=800&q=80"],
+          category: "furniture",
+          rating: 4.7
+        },
+        {
+          _id: "4",
+          name: "Running Shoes",
+          description: "Lightweight and durable for your daily runs.",
+          price: 129.99,
+          images: ["https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=800&q=80"],
+          category: "sports",
+          rating: 4.6
+        }
+      ];
+    }
+  });
 }
 
 export default async function Home() {

@@ -55,9 +55,10 @@ export default function ProfilePage() {
 
   const fetchOrders = async () => {
     try {
+      const token = await user!.getIdToken();
       const res = await fetch("/api/orders", {
         headers: {
-          "x-user-uid": user!.uid,
+          "Authorization": `Bearer ${token}`,
         },
       });
       const data = await res.json();

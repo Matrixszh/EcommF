@@ -133,10 +133,11 @@ export default function AdminProducts() {
     if (!user) return;
 
     try {
+      const token = await user.getIdToken();
       const res = await fetch(`/api/products/${id}`, {
         method: "DELETE",
         headers: {
-          "x-user-uid": user.uid,
+          "Authorization": `Bearer ${token}`,
         },
       });
       

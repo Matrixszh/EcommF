@@ -1,18 +1,13 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Order from '@/models/Order';
-import User from '@/models/User';
 import Product from '@/models/Product'; // Ensure Product model is registered
 import crypto from 'crypto';
+import { getAuthUser } from '@/lib/auth-server';
 
 // Helper to check if user is admin
 async function getUser(request: Request) {
-  const uid = request.headers.get('x-user-uid');
-  if (!uid) return null;
-  
-  await dbConnect();
-  const user = await User.findOne({ firebaseUid: uid });
-  return user;
+  return getAuthUser(request);
 }
 
 export async function GET(request: Request) {
@@ -46,10 +41,18 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     await dbConnect();
+    const user = await getUser(request);
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     
+    // Override userId with authenticated user's ID
+    body.userId = user.firebaseUid;
+
     // Basic validation
-    if (!body.userId || !body.products || body.products.length === 0) {
+    if (!body.products || body.products.length === 0) {
       return NextResponse.json({ success: false, error: 'Invalid order data' }, { status: 400 });
     }
 
@@ -81,45 +84,39 @@ export async function POST(request: Request) {
       body.status = "processing"; // Payment successful
     }
 
-    // 1. Check stock availability for all products
-    for (const item of body.products) {
-      const product = await Product.findById(item.productId);
-      
-      if (!product) {
-        return NextResponse.json({ 
-          success: false, 
-          error: `Product not found: ${item.productId}` 
-        }, { status: 400 });
-      }
-
-      if (product.stock < item.quantity) {
-        return NextResponse.json({ 
-          success: false, 
-          error: `Insufficient stock for "${product.name}". Available: ${product.stock}, Requested: ${item.quantity}` 
-        }, { status: 400 });
-      }
-    }
-
-    // 2. Decrement stock
+    // 1. Atomic Stock Update & Reservation
     const updatedProducts = [];
     try {
       for (const item of body.products) {
-        await Product.findByIdAndUpdate(
-          item.productId, 
-          { $inc: { stock: -item.quantity } }
+        // Try to find product with sufficient stock and decrement atomically
+        const product = await Product.findOneAndUpdate(
+          { _id: item.productId, stock: { $gte: item.quantity } },
+          { $inc: { stock: -item.quantity } },
+          { new: true }
         );
+
+        if (!product) {
+          // If update returns null, it means either product doesn't exist or stock < quantity
+          // We can try to find the product to give a better error message, but for now just throw
+          const existingProduct = await Product.findById(item.productId);
+          if (!existingProduct) {
+             throw new Error(`Product not found: ${item.productId}`);
+          } else {
+             throw new Error(`Insufficient stock for "${existingProduct.name}". Available: ${existingProduct.stock}, Requested: ${item.quantity}`);
+          }
+        }
         updatedProducts.push({ id: item.productId, quantity: item.quantity });
       }
-    } catch (error) {
+    } catch (error: any) {
       // Rollback if any update fails
       console.error("Error updating stock, rolling back...", error);
       for (const p of updatedProducts) {
         await Product.findByIdAndUpdate(p.id, { $inc: { stock: p.quantity } });
       }
-      throw new Error("Failed to update stock");
+      return NextResponse.json({ success: false, error: error.message }, { status: 400 });
     }
 
-    // 3. Create order
+    // 2. Create order
     try {
       const order = await Order.create(body);
       return NextResponse.json({ success: true, data: order }, { status: 201 });

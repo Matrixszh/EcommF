@@ -30,12 +30,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   // Fetch role from backend
-  const fetchRole = async (uid: string, email: string | null) => {
+  const fetchRole = async (currentUser: User) => {
     try {
+      const token = await currentUser.getIdToken();
       const res = await fetch('/api/auth/me', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uid, email })
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ email: currentUser.email })
       });
       if (res.ok) {
         const data = await res.json();
@@ -52,7 +56,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (currentUser) {
         setUser(currentUser);
         // Fetch role when user is authenticated
-        await fetchRole(currentUser.uid, currentUser.email);
+        await fetchRole(currentUser);
         setLoading(false); // Set loading false after role is fetched
       } else {
         setUser(null);
