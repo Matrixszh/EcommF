@@ -46,6 +46,11 @@ export default function CheckoutPage() {
     setIsSubmitting(true);
 
     try {
+      const razorpayKeyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
+      if (!razorpayKeyId) {
+        throw new Error("Razorpay key is not configured");
+      }
+
       // 1. Create Razorpay Order
       const res = await fetch("/api/payment/razorpay", {
         method: "POST",
@@ -64,7 +69,7 @@ export default function CheckoutPage() {
 
       // 2. Initialize Razorpay Options
       const options = {
-        key: "rzp_live_SNOB4m6gvMQBbX",
+        key: razorpayKeyId,
         amount: order.amount,
         currency: order.currency,
         name: "E-Shop",

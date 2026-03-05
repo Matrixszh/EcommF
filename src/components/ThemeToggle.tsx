@@ -7,9 +7,18 @@ import "theme-toggles/css/classic.css";
 export function ThemeToggle() {
   const { setTheme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = React.useState(false);
+  const transitionTimeoutIdRef = React.useRef<number | null>(null);
 
   React.useEffect(() => {
     setMounted(true);
+  }, []);
+
+  React.useEffect(() => {
+    return () => {
+      if (transitionTimeoutIdRef.current !== null) {
+        window.clearTimeout(transitionTimeoutIdRef.current);
+      }
+    };
   }, []);
 
   if (!mounted) {
@@ -52,6 +61,21 @@ export function ThemeToggle() {
   }
 
   const isDark = resolvedTheme === "dark";
+  const toggleTheme = () => {
+    const root = document.documentElement;
+    root.classList.add("theme-transition");
+
+    if (transitionTimeoutIdRef.current !== null) {
+      window.clearTimeout(transitionTimeoutIdRef.current);
+    }
+
+    transitionTimeoutIdRef.current = window.setTimeout(() => {
+      root.classList.remove("theme-transition");
+      transitionTimeoutIdRef.current = null;
+    }, 350);
+
+    setTheme(isDark ? "light" : "dark");
+  };
 
   return (
     <button
@@ -59,7 +83,7 @@ export function ThemeToggle() {
       type="button"
       title="Toggle theme"
       aria-label="Toggle theme"
-      onClick={() => setTheme(isDark ? "light" : "dark")}
+      onClick={toggleTheme}
     >
       <svg
         xmlns="http://www.w3.org/2000/svg"

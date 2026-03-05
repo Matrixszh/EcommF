@@ -116,6 +116,13 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
+.theme-transition,
+.theme-transition * {
+  transition-property: background-color, border-color, color, fill, stroke;
+  transition-duration: 300ms;
+  transition-timing-function: ease;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

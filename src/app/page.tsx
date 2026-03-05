@@ -73,8 +73,8 @@ export default async function Home() {
     <div className="flex flex-col min-h-screen">
       {/* Hero Section */}
       <section className="relative bg-zinc-900 text-white py-20 md:py-32 overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-r from-indigo-600 to-purple-600 opacity-90" />
-        <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1556740738-b6a63e27c4df?w=1600&q=80')] bg-cover bg-center mix-blend-overlay opacity-20" />
+        <div className="absolute inset-0 " />
+        <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1556740738-b6a63e27c4df?w=1600&q=80')] bg-cover bg-center opacity-70" />
         
         <div className="container relative z-10 mx-auto px-4 md:px-6 text-center">
           <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight mb-6">

@@ -9,7 +9,7 @@ async function getProducts(searchParams: { [key: string]: string | string[] | un
   const category = searchParams.category as string;
   const search = searchParams.search as string;
   
-  let query: any = {};
+  const query: any = {};
   if (category) {
     query.category = category;
   }

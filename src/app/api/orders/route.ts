@@ -55,8 +55,16 @@ export async function POST(request: Request) {
 
     // Verify Razorpay Payment if present
     if (body.razorpay_payment_id && body.razorpay_order_id && body.razorpay_signature) {
+      const keySecret = process.env.RAZORPAY_KEY_SECRET;
+      if (!keySecret) {
+        return NextResponse.json(
+          { success: false, error: "Razorpay key secret is not configured" },
+          { status: 500 }
+        );
+      }
+
       const generated_signature = crypto
-        .createHmac("sha256", "tuMCl0p4dCLIcGhU36zsaKhF")
+        .createHmac("sha256", keySecret)
         .update(body.razorpay_order_id + "|" + body.razorpay_payment_id)
         .digest("hex");
 

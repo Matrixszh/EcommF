@@ -21,7 +21,7 @@ export async function GET(request: Request) {
     const search = searchParams.get('search');
     const limit = parseInt(searchParams.get('limit') || '0');
 
-    let query: any = {};
+    const query: any = {};
 
     if (category) {
       query.category = category;
