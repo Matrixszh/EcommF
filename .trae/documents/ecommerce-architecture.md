@@ -1,454 +1,389 @@
-## 1. Architecture Design
+# E-Commerce System Architecture (Next.js + Firebase Auth + MongoDB + Razorpay)
+
+This document describes the current architecture of this repository: runtime boundaries, component breakdown, API logic, and MongoDB schema documentation.
+
+## 1. High-Level Architecture
 
 ```mermaid
 graph TD
-    A[User Browser] --> B[Next.js App Router]
-    B --> C[Firebase Auth]
-    B --> D[MongoDB Atlas]
-    B --> E[Razorpay API]
-    B --> F[Firestore]
-    
-    subgraph "Frontend Layer"
-        B
-        G[React Context/Zustand]
-        H[Tailwind CSS]
-    end
-    
-    subgraph "Authentication Layer"
-        C
-        F
-    end
-    
-    subgraph "Data Layer"
-        D
-        I[Product Models]
-        J[Order Models]
-    end
-    
-    subgraph "Payment Layer"
-        E
-    end
+  Browser[User Browser] --> Next[Next.js App Router]
+  Next --> Firebase[Firebase Authentication]
+  Next --> Mongo[MongoDB Atlas via Mongoose]
+  Next --> Razorpay[Razorpay Orders API]
+
+  subgraph Client[Client Runtime (Browser)]
+    UI[React UI Components]
+    AuthCtx[AuthContext]
+    CartCtx[CartContext (LocalStorage)]
+    Theme[Theme Provider (next-themes)]
+    RazorpayJS[Razorpay Checkout JS]
+  end
+
+  subgraph Server[Server Runtime (Next.js)]
+    RSC[Server Components]
+    API[Route Handlers /app/api/*]
+    Models[Mongoose Models]
+  end
+
+  Browser --> UI
+  UI --> AuthCtx
+  UI --> CartCtx
+  UI --> Theme
+  UI --> RazorpayJS
+
+  RSC --> Models
+  API --> Models
 ```
 
-## 2. Technology Description
+### What runs where
 
-- **Frontend**: Next.js 14+ (App Router) + TypeScript + Tailwind CSS
-- **Initialization Tool**: create-next-app
-- **Authentication**: Firebase Authentication + Firestore
-- **Database**: MongoDB Atlas with Mongoose ODM
-- **Payment Gateway**: Razorpay (India-specific)
-- **State Management**: React Context API / Zustand
-- **Styling**: Tailwind CSS with custom configuration
-- **Deployment**: Vercel (frontend) + MongoDB Atlas (database)
+- Browser: UI, theme switching, cart persistence, Firebase sign-in, Razorpay checkout modal.
+- Next.js server: server-side product reads (RSC), all API routes (orders/products/admin/upload/payment), Razorpay server SDK call, MongoDB reads/writes.
+- External services: Firebase Auth (identity), MongoDB (data), Razorpay (payments).
 
-## 3. Route Definitions
+## 2. Tech Stack (as implemented)
 
-| Route | Purpose |
-|-------|---------|
-| `/` | Homepage with hero section and featured products |
-| `/products` | Product listing page with filters and pagination |
-| `/product/[id]` | Individual product details page |
-| `/cart` | Shopping cart with item management |
-| `/checkout` | Checkout process with payment integration |
-| `/profile` | User profile and order history |
-| `/login` | User authentication page |
-| `/register` | User registration page |
-| `/admin` | Admin panel for product/order management |
-| `/api/products` | REST API for product operations |
-| `/api/orders` | REST API for order management |
-| `/api/razorpay` | Payment processing endpoints |
+- Next.js App Router (Next 16) + React + TypeScript
+- Styling: Tailwind CSS
+- Auth: Firebase Authentication (client SDK)
+- Database: MongoDB Atlas via Mongoose
+- Payments: Razorpay (server order creation + client checkout.js + server signature verification)
+- Theme: next-themes + theme-toggles
+- Animation: GSAP (used by ScrollReveal)
 
-## 4. API Definitions
+Notes:
+- Firestore is initialized in the Firebase client ([firebase.ts](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/lib/firebase.ts)) but is not used by the current app logic.
+- Zustand is installed but the state management in this app is React Context (AuthContext + CartContext).
 
-### 4.1 Product API
+## 3. Frontend Architecture
 
-**Get All Products**
-```
-GET /api/products
-```
+### 3.1 Providers (global app composition)
 
-Query Parameters:
-| Param Name | Type | Required | Description |
-|------------|------|----------|-------------|
-| page | number | false | Page number for pagination |
-| limit | number | false | Items per page |
-| category | string | false | Filter by category |
-| search | string | false | Search term |
-| sort | string | false | Sort field (price, rating, createdAt) |
-| order | string | false | Sort order (asc/desc) |
+Root layout composes providers and the persistent navbar:
 
-Response:
-```json
-{
-  "products": [
-    {
-      "_id": "string",
-      "name": "string",
-      "description": "string",
-      "price": "number",
-      "images": ["string"],
-      "category": "string",
-      "stock": "number",
-      "rating": "number",
-      "createdAt": "Date"
-    }
-  ],
-  "total": "number",
-  "page": "number",
-  "totalPages": "number"
-}
-```
+- Root layout: [layout.tsx](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/layout.tsx#L16-L49)
+  - ThemeProvider: [ThemeProvider.tsx](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/components/ThemeProvider.tsx)
+  - AuthProvider: [AuthContext.tsx](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/context/AuthContext.tsx)
+  - CartProvider: [CartContext.tsx](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/context/CartContext.tsx)
+  - Navbar: [Navbar.tsx](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/components/Navbar.tsx)
 
-**Get Product by ID**
-```
-GET /api/products/[id]
-```
+### 3.2 State management (current)
 
-Response:
-```json
-{
-  "_id": "string",
-  "name": "string",
-  "description": "string",
-  "price": "number",
-  "images": ["string"],
-  "category": "string",
-  "stock": "number",
-  "rating": "number",
-  "createdAt": "Date"
-}
-```
+**AuthContext**
+- Source of truth: Firebase Auth client session.
+- When Firebase reports a user, the app calls `/api/auth/me` to create/read the MongoDB user record and fetch role (user/admin).
+- Used by:
+  - Navbar (show admin link / profile / logout)
+  - Admin layout gatekeeping
+  - Checkout & Profile route protections (client-side redirects)
 
-### 4.2 Order API
+Relevant code:
+- AuthContext: [AuthContext.tsx](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/context/AuthContext.tsx#L27-L109)
+- Role fetch endpoint: [auth/me/route.ts](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/api/auth/me/route.ts)
 
-**Create Order**
-```
-POST /api/orders
-```
+**CartContext**
+- Source of truth: browser localStorage key `cart`.
+- Holds cart items and derived totals (totalItems, subtotal).
+- Enforces stock constraints on client (best-effort; server still re-checks stock when creating an order).
 
-Request Body:
-```json
-{
-  "userId": "string",
-  "products": [
-    {
-      "productId": "string",
-      "quantity": "number",
-      "price": "number"
-    }
-  ],
-  "totalAmount": "number",
-  "shippingAddress": {
-    "name": "string",
-    "phone": "string",
-    "address": "string",
-    "city": "string",
-    "state": "string",
-    "pincode": "string"
-  }
-}
-```
+Relevant code:
+- CartContext: [CartContext.tsx](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/context/CartContext.tsx)
 
-Response:
-```json
-{
-  "orderId": "string",
-  "status": "pending",
-  "paymentId": "string",
-  "createdAt": "Date"
-}
-```
+**Theme**
+- ThemeProvider uses `class` attribute on `<html>` and toggles `.dark`.
+- ThemeToggle adds a temporary `theme-transition` class on `<html>` to animate color changes.
 
-### 4.3 Razorpay API
+Relevant code:
+- ThemeToggle: [ThemeToggle.tsx](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/components/ThemeToggle.tsx)
+- Transition CSS: [globals.css](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/globals.css#L119-L124)
 
-**Create Razorpay Order**
-```
-POST /api/razorpay/create-order
-```
+### 3.3 Page (route) breakdown and logic
 
-Request Body:
-```json
-{
-  "amount": "number",
-  "currency": "INR",
-  "receipt": "string"
-}
-```
+**Public browsing**
+- `/` Home: server component pulls latest products from MongoDB and renders ProductCard grid: [page.tsx](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/page.tsx)
+- `/products` Listing: server component queries MongoDB by URL search params: [products/page.tsx](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/products/page.tsx)
+- `/product/[id]` Details: server component reads product and renders AddToCartButton: [product/[id]/page.tsx](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/product/%5Bid%5D/page.tsx)
 
-Response:
-```json
-{
-  "id": "string",
-  "amount": "number",
-  "currency": "INR",
-  "status": "created"
-}
-```
+**Cart + Checkout**
+- `/cart`: client page driven by CartContext: [cart/page.tsx](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/cart/page.tsx)
+- `/checkout`: client page guarded by auth + cart contents; creates Razorpay order then finalizes order via `/api/orders`: [checkout/page.tsx](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/checkout/page.tsx)
 
-**Verify Payment**
-```
-POST /api/razorpay/verify-payment
-```
+**Auth**
+- `/login`: client page; supports Google sign-in and email/password; uses `redirect` query param: [login/page.tsx](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/login/page.tsx)
+- `/register`: client page; creates Firebase user + displayName: [register/page.tsx](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/register/page.tsx)
 
-Request Body:
-```json
-{
-  "razorpay_order_id": "string",
-  "razorpay_payment_id": "string",
-  "razorpay_signature": "string"
-}
-```
+**Profile**
+- `/profile`: client page; fetches user orders from `/api/orders` using `x-user-uid` header: [profile/page.tsx](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/profile/page.tsx)
 
-## 5. Server Architecture Diagram
+**Admin**
+- `/admin`: admin dashboard (client) loads stats from `/api/admin/stats`: [admin/page.tsx](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/admin/page.tsx)
+- `/admin/products`: CRUD + image upload flow: [admin/products/page.tsx](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/admin/products/page.tsx)
+- `/admin/orders`: list orders + update status: [admin/orders/page.tsx](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/admin/orders/page.tsx)
+- Admin layout: client-side role gating: [admin/layout.tsx](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/admin/layout.tsx)
+
+### 3.4 Reusable UI components
+
+- Navbar + Theme toggle + auth/cart entry points: [Navbar.tsx](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/components/Navbar.tsx)
+- Product listing tile: [ProductCard.tsx](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/components/ProductCard.tsx)
+- Product detail CTA: [AddToCartButton.tsx](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/components/AddToCartButton.tsx)
+- Scroll/word animation block: [ScrollReveal.tsx](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/components/ScrollReveal.tsx)
+
+## 4. Backend Architecture (Next.js Route Handlers)
+
+### 4.1 Shared infrastructure
+
+- MongoDB connector with global connection caching (prevents reconnect loops in dev): [mongodb.ts](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/lib/mongodb.ts)
+- Mongoose models (schema definitions): [models/](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/models)
+
+### 4.2 API surface (current)
+
+**Auth**
+- `POST /api/auth/me`: upserts user (firebaseUid/email) in MongoDB and returns role: [auth/me/route.ts](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/api/auth/me/route.ts)
+
+**Products**
+- `GET /api/products?category=&search=&limit=`: returns products (public): [products/route.ts](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/api/products/route.ts)
+- `POST /api/products`: creates product (admin; checks `x-user-uid`): [products/route.ts](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/api/products/route.ts)
+- `GET /api/products/[id]`: gets product: [products/[id]/route.ts](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/api/products/%5Bid%5D/route.ts)
+- `PUT /api/products/[id]`: updates product (admin): [products/[id]/route.ts](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/api/products/%5Bid%5D/route.ts)
+- `DELETE /api/products/[id]`: deletes product (admin): [products/[id]/route.ts](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/api/products/%5Bid%5D/route.ts)
+
+**Orders**
+- `GET /api/orders`: user sees own orders; admin sees all (checks `x-user-uid` + MongoDB role): [orders/route.ts](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/api/orders/route.ts)
+- `POST /api/orders`: creates order; optionally verifies Razorpay signature; decrements stock; creates Order doc: [orders/route.ts](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/api/orders/route.ts)
+- `PUT /api/orders/[id]`: update order status (admin only): [orders/[id]/route.ts](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/api/orders/%5Bid%5D/route.ts)
+
+**Payments**
+- `POST /api/payment/razorpay`: server creates a Razorpay order using secret keys: [payment/razorpay/route.ts](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/api/payment/razorpay/route.ts)
+
+**Images**
+- `POST /api/upload`: stores uploaded image as a MongoDB document (Buffer) and returns URL `/api/images/<id>`: [upload/route.ts](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/api/upload/route.ts)
+- `GET /api/images/[id]`: returns raw bytes with `Content-Type` and long cache headers: [images/[id]/route.ts](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/api/images/%5Bid%5D/route.ts)
+
+**Admin**
+- `GET /api/admin/stats`: counts products + orders + revenue (admin only): [admin/stats/route.ts](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/api/admin/stats/route.ts)
+
+**Seeder**
+- `GET /api/seed`: clears Product collection and inserts mock products: [seed/route.ts](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/api/seed/route.ts)
+
+## 5. Key Business Flows (Logic)
+
+### 5.1 Authentication + Role synchronization
 
 ```mermaid
-graph TD
-    A[Next.js API Routes] --> B[Authentication Middleware]
-    B --> C[Service Layer]
-    C --> D[Database Layer]
-    C --> E[External Services]
-    
-    subgraph "API Layer"
-        A
-        B
-    end
-    
-    subgraph "Business Logic"
-        C[Product Service]
-        C1[Order Service]
-        C2[Payment Service]
-    end
-    
-    subgraph "Data Access"
-        D[MongoDB Models]
-        D1[Firestore Models]
-    end
-    
-    subgraph "External APIs"
-        E[Razorpay API]
-        E1[Firebase Auth]
-    end
+sequenceDiagram
+  participant Browser
+  participant Firebase as Firebase Auth
+  participant Next as Next.js API
+  participant Mongo as MongoDB
+
+  Browser->>Firebase: Sign in (Google or email/password)
+  Firebase-->>Browser: Firebase session (uid, email)
+  Browser->>Next: POST /api/auth/me { uid, email }
+  Next->>Mongo: Find user by firebaseUid
+  alt user missing and email provided
+    Next->>Mongo: Create user { firebaseUid, email, role: user }
+  end
+  Mongo-->>Next: User doc (role)
+  Next-->>Browser: { role }
 ```
 
-## 6. Data Model
+### 5.2 Checkout + payment + order creation
 
-### 6.1 Data Model Definition
+```mermaid
+sequenceDiagram
+  participant Browser
+  participant Next as Next.js API
+  participant Razor as Razorpay
+  participant Mongo as MongoDB
+
+  Browser->>Next: POST /api/payment/razorpay { amount, currency }
+  Next->>Razor: Create Razorpay order (server SDK)
+  Razor-->>Next: order { id, amount, currency }
+  Next-->>Browser: order details
+
+  Browser->>Razor: Open checkout.js with order_id
+  Razor-->>Browser: handler callback (payment_id, order_id, signature)
+
+  Browser->>Next: POST /api/orders (shipping + cart + razorpay fields)
+  Next->>Next: Verify signature (HMAC SHA256)
+  Next->>Mongo: Verify stock for each product
+  Next->>Mongo: Decrement product stock (per item)
+  Next->>Mongo: Create Order document
+  Mongo-->>Next: Order created
+  Next-->>Browser: { success: true, data: order }
+```
+
+Notes:
+- Stock decrement and order creation run server-side in [orders/route.ts](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/api/orders/route.ts#L84-L133), including rollback if stock update or order creation fails.
+- Client cart clearing happens after the order API call succeeds: [checkout/page.tsx](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/checkout/page.tsx#L114-L121)
+
+## 6. Database Documentation (MongoDB + Mongoose)
+
+### 6.1 Collections overview
+
+- `products` (Product)
+- `orders` (Order)
+- `users` (User)
+- `images` (Image; binary storage)
+
+### 6.2 Entity relationships (current)
 
 ```mermaid
 erDiagram
-    USER ||--o{ ORDER : places
-    USER {
-        string uid PK
-        string email
-        string name
-        string phone
-        object address
-        timestamp createdAt
-    }
-    ORDER ||--|{ ORDER_ITEM : contains
-    ORDER {
-        string _id PK
-        string userId FK
-        array products
-        number totalAmount
-        string paymentId
-        string orderId
-        string status
-        timestamp createdAt
-    }
-    ORDER_ITEM }o--|| PRODUCT : includes
-    ORDER_ITEM {
-        string productId FK
-        number quantity
-        number price
-    }
-    PRODUCT {
-        string _id PK
-        string name
-        string description
-        number price
-        array images
-        string category
-        number stock
-        number rating
-        timestamp createdAt
-    }
-```
+  USER ||--o{ ORDER : places
+  ORDER ||--|{ ORDER_ITEM : contains
+  PRODUCT ||--o{ ORDER_ITEM : appears_in
 
-### 6.2 Data Definition Language
-
-**Product Model (MongoDB)**
-```javascript
-// Mongoose Schema
-const ProductSchema = new mongoose.Schema({
-  name: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  description: {
-    type: String,
-    required: true
-  },
-  price: {
-    type: Number,
-    required: true,
-    min: 0
-  },
-  images: [{
-    type: String,
-    required: true
-  }],
-  category: {
-    type: String,
-    required: true,
-    enum: ['electronics', 'clothing', 'books', 'home', 'sports', 'other']
-  },
-  stock: {
-    type: Number,
-    required: true,
-    min: 0,
-    default: 0
-  },
-  rating: {
-    type: Number,
-    default: 0,
-    min: 0,
-    max: 5
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
+  USER {
+    string firebaseUid
+    string email
+    string role
+    date createdAt
   }
-});
 
-// Indexes
-ProductSchema.index({ category: 1 });
-ProductSchema.index({ price: 1 });
-ProductSchema.index({ rating: -1 });
-ProductSchema.index({ name: 'text', description: 'text' });
-```
-
-**Order Model (MongoDB)**
-```javascript
-// Mongoose Schema
-const OrderSchema = new mongoose.Schema({
-  userId: {
-    type: String,
-    required: true,
-    ref: 'User'
-  },
-  products: [{
-    productId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Product',
-      required: true
-    },
-    quantity: {
-      type: Number,
-      required: true,
-      min: 1
-    },
-    price: {
-      type: Number,
-      required: true,
-      min: 0
-    }
-  }],
-  totalAmount: {
-    type: Number,
-    required: true,
-    min: 0
-  },
-  paymentId: {
-    type: String,
-    required: true
-  },
-  orderId: {
-    type: String,
-    required: true,
-    unique: true
-  },
-  status: {
-    type: String,
-    enum: ['pending', 'confirmed', 'shipped', 'delivered', 'cancelled'],
-    default: 'pending'
-  },
-  shippingAddress: {
-    name: { type: String, required: true },
-    phone: { type: String, required: true },
-    address: { type: String, required: true },
-    city: { type: String, required: true },
-    state: { type: String, required: true },
-    pincode: { type: String, required: true }
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
+  PRODUCT {
+    objectId _id
+    string name
+    string description
+    number price
+    string[] images
+    string category
+    number stock
+    number rating
+    date createdAt
   }
-});
 
-// Indexes
-OrderSchema.index({ userId: 1 });
-OrderSchema.index({ status: 1 });
-OrderSchema.index({ createdAt: -1 });
+  ORDER {
+    objectId _id
+    string userId
+    number totalAmount
+    string paymentId
+    string orderId
+    string status
+    object shippingAddress
+    date createdAt
+  }
+
+  ORDER_ITEM {
+    objectId productId
+    number quantity
+    number price
+  }
 ```
 
-**User Profile (Firestore)**
-```javascript
-// Firestore Document Structure
+Important detail: `Order.userId` stores the Firebase UID as a string (not an ObjectId reference to `users`).
+
+### 6.3 Schemas (as implemented in /src/models)
+
+**Product**
+- Source: [Product.ts](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/models/Product.ts)
+
+```ts
 {
-  uid: "string", // Firebase Auth UID
-  email: "string",
-  name: "string",
-  phone: "string",
-  address: {
-    line1: "string",
-    line2: "string",
-    city: "string",
-    state: "string",
-    pincode: "string"
-  },
-  createdAt: "timestamp",
-  updatedAt: "timestamp",
-  isAdmin: "boolean" // For admin access control
+  name: string; // required
+  description: string; // required
+  price: number; // required
+  images: string[]; // required
+  category: string; // required
+  stock: number; // required, default 0
+  rating: number; // default 0
+  createdAt: Date; // default now
 }
 ```
 
-## 7. Environment Configuration
+**Order**
+- Source: [Order.ts](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/models/Order.ts)
 
-**Required Environment Variables:**
-```bash
-# Firebase Configuration
-NEXT_PUBLIC_FIREBASE_API_KEY=
-NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=
-NEXT_PUBLIC_FIREBASE_PROJECT_ID=
-NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=
-NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
-NEXT_PUBLIC_FIREBASE_APP_ID=
-
-# MongoDB Configuration
-MONGODB_URI=
-MONGODB_DB_NAME=
-
-# Razorpay Configuration
-RAZORPAY_KEY_ID=
-RAZORPAY_KEY_SECRET=
-NEXT_PUBLIC_RAZORPAY_KEY_ID=
-
-# Application Configuration
-NEXT_PUBLIC_BASE_URL=
-NEXT_PUBLIC_ADMIN_UIDS= # Comma-separated list of admin UIDs
+```ts
+{
+  userId: string; // firebase uid
+  products: Array<{
+    productId: ObjectId; // ref Product
+    quantity: number;
+    price: number;
+  }>;
+  totalAmount: number;
+  paymentId: string;
+  orderId: string;
+  status: "pending" | "processing" | "shipped" | "delivered" | "cancelled";
+  shippingAddress: {
+    name: string;
+    phone: string;
+    address: string;
+    city: string;
+    state: string;
+    pincode: string;
+  };
+  createdAt: Date;
+}
 ```
 
-## 8. Security Considerations
+**User**
+- Source: [User.ts](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/models/User.ts)
 
-- **Authentication**: Firebase JWT token validation on protected routes
-- **Input Validation**: Server-side validation for all API endpoints
-- **CORS**: Configured for production domains only
-- **Rate Limiting**: Implemented on API routes
-- **Environment Variables**: All sensitive data in environment variables
-- **HTTPS**: Enforced in production
-- **Content Security Policy**: Configured for Razorpay integration
-- **Database Security**: MongoDB connection with SSL/TLS
-- **Payment Security**: Razorpay signature verification on server-side
+```ts
+{
+  firebaseUid: string; // unique
+  email: string;
+  role: "user" | "admin"; // default user
+  createdAt: Date;
+}
+```
+
+**Image**
+- Source: [Image.ts](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/models/Image.ts)
+
+```ts
+{
+  data: Buffer; // required
+  contentType: string; // required
+  name?: string;
+  createdAt: Date;
+}
+```
+
+### 6.4 Suggested indexes (recommended)
+
+These indexes are not currently defined in the model files, but they are typical for this workload:
+
+- `products`: `{ createdAt: -1 }`, `{ category: 1, createdAt: -1 }`, text index on `{ name, description }`
+- `orders`: `{ userId: 1, createdAt: -1 }`, `{ status: 1, createdAt: -1 }`
+- `users`: unique index on `firebaseUid` already implied in schema
+
+## 7. Environment Variables
+
+This app relies on `.env.local` for runtime configuration. The current code references:
+
+- Firebase (client):
+  - `NEXT_PUBLIC_FIREBASE_API_KEY`
+  - `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
+  - `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
+  - `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`
+  - `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
+  - `NEXT_PUBLIC_FIREBASE_APP_ID`
+  - `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID`
+- MongoDB (server):
+  - `MONGODB_URI`
+- Razorpay:
+  - `RAZORPAY_KEY_ID` (server)
+  - `RAZORPAY_KEY_SECRET` (server)
+  - `NEXT_PUBLIC_RAZORPAY_KEY_ID` (client)
+
+## 8. Operational Notes (Admin + Seeding)
+
+- Admin access is based on `User.role === "admin"` in MongoDB and is checked:
+  - client-side in [admin/layout.tsx](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/admin/layout.tsx)
+  - server-side in admin/product/order routes by querying MongoDB with `x-user-uid`
+- API-based seeding endpoint: [seed/route.ts](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/src/app/api/seed/route.ts)
+- Standalone scripts exist under [scripts/](file:///c:/Users/hp/Downloads/ecomtrae/ecommtrae/scripts) for seeding and creating an admin user.
+
+## 9. Security Considerations (current vs recommended)
+
+Current behavior to be aware of:
+- Admin and user API authorization is primarily based on a caller-supplied `x-user-uid` header and a MongoDB lookup (no Firebase ID token verification).
+
+Recommended hardening:
+- Verify Firebase ID tokens on the server (do not trust arbitrary `x-user-uid`).
+- Validate and sanitize API request bodies (especially product creation/update and order creation).
+- Add upload size/type limits to `/api/upload`.
+- Remove verbose request logging in auth endpoints in production.
