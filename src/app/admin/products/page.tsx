@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { Plus, Pencil, Trash2, X, Search, Loader2, Upload } from "lucide-react";
 import Image from "next/image";
+import { isValidImageUrl } from "@/lib/utils";
 
 interface Product {
   _id: string;
@@ -100,11 +101,12 @@ export default function AdminProducts() {
       
       const method = editingProduct ? "PUT" : "POST";
 
+      const token = await user.getIdToken();
       const res = await fetch(url, {
         method,
         headers: {
           "Content-Type": "application/json",
-          "x-user-uid": user.uid,
+          "Authorization": `Bearer ${token}`,
         },
         body: JSON.stringify(payload),
       });
@@ -219,7 +221,7 @@ export default function AdminProducts() {
                   <div className="flex items-center">
                     <div className="h-10 w-10 flex-shrink-0 relative">
                       <Image 
-                        src={product.images[0] || "/placeholder.svg"} 
+                        src={isValidImageUrl(product.images[0]) ? product.images[0] : "/placeholder.svg"} 
                         alt="" 
                         fill
                         className="rounded-full object-cover"

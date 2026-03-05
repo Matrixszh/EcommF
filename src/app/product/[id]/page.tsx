@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, Star } from "lucide-react";
 import AddToCartButton from "@/components/AddToCartButton";
 import { getOrSetCache } from "@/lib/redis";
+import { isValidImageUrl } from "@/lib/utils";
 
 // Enable ISR with 60-second revalidation
 export const revalidate = 60;
@@ -54,7 +55,7 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
         {/* Product Image */}
         <div className="relative aspect-square overflow-hidden rounded-xl bg-zinc-100 dark:bg-zinc-800">
           <Image
-            src={product.images[0] || "/placeholder.svg"}
+            src={isValidImageUrl(product.images[0]) ? product.images[0] : "/placeholder.svg"}
             alt={product.name}
             fill
             className="object-cover"

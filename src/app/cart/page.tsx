@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useCart } from "@/context/CartContext";
 import { Trash2, Plus, Minus, ArrowRight } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { isValidImageUrl } from "@/lib/utils";
 
 export default function CartPage() {
   const { items, removeItem, updateQuantity, subtotal, totalItems } = useCart();
@@ -41,7 +42,7 @@ export default function CartPage() {
             >
               <div className="relative h-24 w-24 flex-shrink-0 overflow-hidden rounded-md border bg-zinc-100 dark:bg-zinc-800">
                 <Image
-                  src={item.product.images[0] || "/placeholder.svg"}
+                  src={isValidImageUrl(item.product.images[0]) ? item.product.images[0] : "/placeholder.svg"}
                   alt={item.product.name}
                   fill
                   className="object-cover"

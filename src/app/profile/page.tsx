@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Loader2, Package, Calendar, MapPin, User as UserIcon, Mail } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
+import { isValidImageUrl } from "@/lib/utils";
 
 interface OrderProduct {
   productId: {
@@ -187,7 +188,7 @@ export default function ProfilePage() {
                         {order.products.map((item, idx) => (
                           <div key={idx} className="flex items-center gap-4 py-3">
                             <div className="relative h-12 w-12 flex-shrink-0 overflow-hidden rounded-md border border-zinc-200 bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800">
-                              {item.productId?.images?.[0] ? (
+                              {isValidImageUrl(item.productId?.images?.[0]) ? (
                                 <Image
                                   src={item.productId.images[0]}
                                   alt={item.productId.name}

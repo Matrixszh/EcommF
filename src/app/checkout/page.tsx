@@ -8,6 +8,7 @@ import { Loader2, ArrowLeft, CreditCard } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import Script from "next/script";
+import { isValidImageUrl } from "@/lib/utils";
 
 export default function CheckoutPage() {
   const { user, loading: authLoading } = useAuth();
@@ -281,7 +282,7 @@ export default function CheckoutPage() {
                 <div key={item.product._id} className="flex gap-3">
                   <div className="relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-md border bg-zinc-100 dark:bg-zinc-800">
                     <Image
-                      src={item.product.images[0] || "/placeholder.svg"}
+                      src={isValidImageUrl(item.product.images[0]) ? item.product.images[0] : "/placeholder.svg"}
                       alt={item.product.name}
                       fill
                       className="object-cover"

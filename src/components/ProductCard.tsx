@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ShoppingCart } from "lucide-react";
 import { useCart } from "@/context/CartContext";
+import { isValidImageUrl } from "@/lib/utils";
 
 interface ProductCardProps {
   product: {
@@ -26,7 +27,7 @@ export default function ProductCard({ product }: ProductCardProps) {
     <div className="group relative flex flex-col overflow-hidden rounded-lg border bg-white shadow-sm transition-all hover:shadow-md dark:bg-zinc-900 dark:border-zinc-800">
       <Link href={`/product/${product._id}`} className="relative aspect-square overflow-hidden bg-zinc-100 dark:bg-zinc-800">
         <Image
-          src={product.images[0] || "/placeholder.svg"}
+          src={isValidImageUrl(product.images[0]) ? product.images[0] : "/placeholder.svg"}
           alt={product.name}
           fill
           className="object-cover transition-transform group-hover:scale-105"

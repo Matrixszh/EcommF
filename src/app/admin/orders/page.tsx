@@ -74,11 +74,12 @@ export default function AdminOrders() {
   const updateStatus = async (orderId: string, newStatus: string) => {
     if (!user) return;
     try {
+      const token = await user.getIdToken();
       const res = await fetch(`/api/orders/${orderId}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
-          "x-user-uid": user.uid,
+          "Authorization": `Bearer ${token}`,
         },
         body: JSON.stringify({ status: newStatus }),
       });
