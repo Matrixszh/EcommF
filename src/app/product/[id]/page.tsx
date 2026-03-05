@@ -6,6 +6,7 @@ import { ArrowLeft, Star } from "lucide-react";
 import AddToCartButton from "@/components/AddToCartButton";
 import { getOrSetCache } from "@/lib/redis";
 import { isValidImageUrl } from "@/lib/utils";
+import { notFound } from "next/navigation";
 
 // Enable ISR with 60-second revalidation
 export const revalidate = 60;
@@ -16,12 +17,23 @@ async function getProduct(id: string) {
   return getOrSetCache(cacheKey, async () => {
     try {
       await dbConnect();
+      // Validate ObjectId format to prevent CastError
+      if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+        console.error(`Invalid product ID format: ${id}`);
+        return null;
+      }
+      
       const product = await Product.findById(id).lean();
-      if (!product) return null;
+      
+      if (!product) {
+        console.warn(`Product not found in DB: ${id}`);
+        return null;
+      }
+      
       return JSON.parse(JSON.stringify(product));
     } catch (error) {
       console.error("Error fetching product:", error);
-      return null;
+      throw error; // Throw error to trigger 500 instead of 404
     }
   });
 }
@@ -31,14 +43,7 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
   const product = await getProduct(resolvedParams.id);
 
   if (!product) {
-    return (
-      <div className="container mx-auto px-4 py-20 text-center">
-        <h1 className="text-2xl font-bold mb-4">Product not found</h1>
-        <Link href="/products" className="text-indigo-600 hover:underline">
-          Back to products
-        </Link>
-      </div>
-    );
+    notFound();
   }
 
   return (

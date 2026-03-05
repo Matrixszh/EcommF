@@ -28,6 +28,8 @@ export async function GET(
   }
 }
 
+import { invalidateCache, default as redis } from '@/lib/redis';
+
 export async function PUT(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -49,6 +51,12 @@ export async function PUT(
     if (!product) {
       return NextResponse.json({ success: false, error: 'Product not found' }, { status: 404 });
     }
+
+    // Invalidate caches
+    await Promise.all([
+      invalidateCache('products:*'),
+      redis?.del(`product:${id}`)
+    ]);
 
     return NextResponse.json({ success: true, data: product });
   } catch (error: any) {
@@ -73,6 +81,12 @@ export async function DELETE(
     if (!product) {
       return NextResponse.json({ success: false, error: 'Product not found' }, { status: 404 });
     }
+
+    // Invalidate caches
+    await Promise.all([
+      invalidateCache('products:*'),
+      redis?.del(`product:${id}`)
+    ]);
 
     return NextResponse.json({ success: true, data: {} });
   } catch (error: any) {

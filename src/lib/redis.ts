@@ -65,3 +65,31 @@ export async function getOrSetCache<T>(
     return fetcher();
   }
 }
+
+/**
+ * Invalidate cache keys matching a pattern
+ * @param pattern Glob pattern (e.g. "products:*")
+ */
+export async function invalidateCache(pattern: string): Promise<void> {
+  if (!redis) return;
+  
+  try {
+    const stream = redis.scanStream({
+      match: pattern,
+      count: 100
+    });
+    
+    stream.on('data', async (keys: string[]) => {
+      if (keys.length) {
+        await redis.unlink(keys);
+      }
+    });
+    
+    return new Promise((resolve, reject) => {
+      stream.on('end', resolve);
+      stream.on('error', reject);
+    });
+  } catch (error) {
+    console.error(`Error invalidating cache for pattern ${pattern}:`, error);
+  }
+}
