@@ -229,7 +229,7 @@ sequenceDiagram
   participant Next as Next.js Server (ISR)
   participant Redis as Redis Cache
   participant Mongo as MongoDB
-
+  
   User->>Next: GET /products (Page Request)
   
   alt Page is Stale (>60s) or New
@@ -252,9 +252,21 @@ Notes:
 - `getOrSetCache` helper wraps DB calls to ensure Redis is checked first.
 - If Redis is down, it falls back to MongoDB transparently.
 
-## 6. Database Documentation (MongoDB + Mongoose)
+## 6. Maintenance & Scripts
 
-### 6.1 Collections overview
+### 6.1 Data Cleanup
+- **Script**: `scripts/cleanup-broken-products.mjs`
+- **Purpose**: Removes products with broken image URLs (e.g. starting with `/api/images/`) from MongoDB.
+- **Usage**: `node --env-file=.env.local scripts/cleanup-broken-products.mjs`
+
+### 6.2 Cache Management
+- **Script**: `scripts/flush-redis.mjs`
+- **Purpose**: Flushes all keys from the Redis cache. useful when data structure changes or during deployments.
+- **Usage**: `node --env-file=.env.local scripts/flush-redis.mjs`
+
+## 7. Database Documentation (MongoDB + Mongoose)
+
+### 7.1 Collections overview
 
 - `products` (Product)
 - `orders` (Order)
