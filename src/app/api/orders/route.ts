@@ -3,6 +3,7 @@ import dbConnect from '@/lib/mongodb';
 import Order from '@/models/Order';
 import User from '@/models/User';
 import Product from '@/models/Product'; // Ensure Product model is registered
+import crypto from 'crypto';
 
 // Helper to check if user is admin
 async function getUser(request: Request) {
@@ -50,6 +51,26 @@ export async function POST(request: Request) {
     // Basic validation
     if (!body.userId || !body.products || body.products.length === 0) {
       return NextResponse.json({ success: false, error: 'Invalid order data' }, { status: 400 });
+    }
+
+    // Verify Razorpay Payment if present
+    if (body.razorpay_payment_id && body.razorpay_order_id && body.razorpay_signature) {
+      const generated_signature = crypto
+        .createHmac("sha256", "tuMCl0p4dCLIcGhU36zsaKhF")
+        .update(body.razorpay_order_id + "|" + body.razorpay_payment_id)
+        .digest("hex");
+
+      if (generated_signature !== body.razorpay_signature) {
+        return NextResponse.json(
+          { success: false, error: "Invalid payment signature" },
+          { status: 400 }
+        );
+      }
+      
+      // Update payment details in order body
+      body.paymentId = body.razorpay_payment_id;
+      body.orderId = body.razorpay_order_id;
+      body.status = "processing"; // Payment successful
     }
 
     // 1. Check stock availability for all products

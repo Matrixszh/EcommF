@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { Loader2, ArrowLeft, CreditCard } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
+import Script from "next/script";
 
 export default function CheckoutPage() {
   const { user, loading: authLoading } = useAuth();
@@ -45,40 +46,95 @@ export default function CheckoutPage() {
     setIsSubmitting(true);
 
     try {
-      const orderData = {
-        userId: user.uid,
-        products: items.map((item) => ({
-          productId: item.product._id,
-          quantity: item.quantity,
-          price: item.product.price,
-        })),
-        totalAmount: subtotal,
-        paymentId: "COD-" + Date.now(), // Simulating payment ID for Cash on Delivery
-        orderId: "ORD-" + Math.random().toString(36).substr(2, 9).toUpperCase(),
-        status: "pending",
-        shippingAddress: formData,
-      };
-
-      const res = await fetch("/api/orders", {
+      // 1. Create Razorpay Order
+      const res = await fetch("/api/payment/razorpay", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(orderData),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          amount: subtotal, 
+          currency: "INR" 
+        }),
       });
 
-      const data = await res.json();
+      const order = await res.json();
 
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to place order");
+      if (order.error) {
+        throw new Error(order.error);
       }
 
-      clearCart();
-      router.push("/profile");
+      // 2. Initialize Razorpay Options
+      const options = {
+        key: "rzp_live_SNOB4m6gvMQBbX",
+        amount: order.amount,
+        currency: order.currency,
+        name: "E-Shop",
+        description: "Order Payment",
+        order_id: order.id,
+        handler: async function (response: any) {
+          try {
+            // 3. Verify Payment & Create Order
+            const orderData = {
+              userId: user.uid,
+              products: items.map((item) => ({
+                productId: item.product._id,
+                quantity: item.quantity,
+                price: item.product.price,
+              })),
+              totalAmount: subtotal,
+              // Razorpay details for verification
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_signature: response.razorpay_signature,
+              // Standard fields
+              paymentId: response.razorpay_payment_id,
+              orderId: response.razorpay_order_id,
+              status: "processing",
+              shippingAddress: formData,
+            };
+
+            const orderRes = await fetch("/api/orders", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(orderData),
+            });
+
+            const data = await orderRes.json();
+
+            if (!orderRes.ok) {
+              throw new Error(data.error || "Failed to place order");
+            }
+
+            clearCart();
+            router.push("/profile");
+          } catch (error: any) {
+            console.error("Order submission failed:", error);
+            alert("Payment successful but order creation failed: " + error.message);
+          } finally {
+            setIsSubmitting(false);
+          }
+        },
+        prefill: {
+          name: formData.name,
+          email: user.email,
+          contact: formData.phone,
+        },
+        theme: {
+          color: "#4f46e5",
+        },
+        modal: {
+          ondismiss: function() {
+            setIsSubmitting(false);
+          }
+        }
+      };
+
+      const rzp1 = new (window as any).Razorpay(options);
+      rzp1.open();
     } catch (error: any) {
-      console.error("Order submission failed:", error);
+      console.error("Payment initiation failed:", error);
       alert(error.message);
-    } finally {
       setIsSubmitting(false);
     }
   };
@@ -93,6 +149,7 @@ export default function CheckoutPage() {
 
   return (
     <div className="container mx-auto px-4 py-8 md:px-6">
+      <Script src="https://checkout.razorpay.com/v1/checkout.js" />
       <div className="mb-8">
         <Link
           href="/cart"
