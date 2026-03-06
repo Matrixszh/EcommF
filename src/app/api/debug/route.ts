@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
-import redis from '@/lib/redis';
 import Product from '@/models/Product';
 import mongoose from 'mongoose';
 
@@ -17,7 +16,6 @@ export async function GET(request: Request) {
     env: {
       NODE_ENV: process.env.NODE_ENV,
       MONGODB_URI_DEFINED: !!process.env.MONGODB_URI,
-      REDIS_URL_DEFINED: !!(process.env.UPSTASH_REDIS_REST_URL || process.env.REDIS_URL),
       CLOUDINARY_DEFINED: !!process.env.CLOUDINARY_CLOUD_NAME,
       NEXT_PUBLIC_FIREBASE_PROJECT_ID: !!process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
     },
@@ -25,41 +23,11 @@ export async function GET(request: Request) {
       status: 'unknown',
       readyState: 0,
     },
-    redis: {
-      status: 'unknown',
-    },
     data: {
       productCount: 0,
       products: [],
     }
   };
-
-  try {
-    if (redis) {
-      if (flush === 'true') {
-        await redis.flushdb();
-        status.redis.action = 'FLUSHED';
-      }
-
-      const redisPromise = (async () => {
-        await redis.set('debug-test', 'ok', { ex: 10 });
-        const val = await redis.get('debug-test');
-        return val === 'ok' ? 'connected' : 'failed';
-      })();
-
-      const timeoutPromise = new Promise<string>((resolve) => 
-        setTimeout(() => resolve('timeout'), 2000)
-      );
-
-      const statusResult = await Promise.race([redisPromise, timeoutPromise]);
-      status.redis.status = statusResult;
-    } else {
-      status.redis.status = 'disabled (no client)';
-    }
-  } catch (error: any) {
-    status.redis.status = 'error';
-    status.redis.error = error.message;
-  }
 
   try {
     await dbConnect();

@@ -53,11 +53,11 @@ export async function PUT(
       return NextResponse.json({ success: false, error: 'Product not found' }, { status: 404 });
     }
 
-    // Invalidate caches (v2)
+    // Invalidate caches (v2) - No-op
     await Promise.all([
       invalidateCache('v2:products:*'),
-      redis?.del(`v2:product:${id}`),
-      redis?.del('v2:featured_products')
+      // redis?.del(`v2:product:${id}`),
+      // redis?.del('v2:featured_products')
     ]);
 
     return NextResponse.json({ success: true, data: product });
@@ -84,11 +84,11 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: 'Product not found' }, { status: 404 });
     }
 
-    // Invalidate caches (v2)
+    // Invalidate caches (v2) - No-op
     await Promise.all([
       invalidateCache('v2:products:*'),
-      redis?.del(`v2:product:${id}`),
-      redis?.del('v2:featured_products')
+      // redis?.del(`v2:product:${id}`),
+      // redis?.del('v2:featured_products')
     ]);
 
     return NextResponse.json({ success: true, data: {} });
