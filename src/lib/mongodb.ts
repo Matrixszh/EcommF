@@ -23,23 +23,15 @@ async function dbConnect() {
     throw new Error('Please define the MONGODB_URI environment variable inside .env.local');
   }
 
-  // If connection exists AND is still open, reuse it
-  if (cached.conn && cached.conn.readyState === 1) {
+  if (cached.conn) {
     return cached.conn;
-  }
-
-  // Reset stale connection state
-  if (cached.conn && cached.conn.readyState !== 1) {
-    cached.conn = null;
-    cached.promise = null;
   }
 
   if (!cached.promise) {
     const opts = {
       bufferCommands: false,
-      serverSelectionTimeoutMS: 10000, // Increased for Vercel cold starts
+      serverSelectionTimeoutMS: 5000, // Fail after 5 seconds
       socketTimeoutMS: 45000,
-      maxPoolSize: 10,
     };
 
     console.log('Connecting to MongoDB...');
@@ -48,14 +40,11 @@ async function dbConnect() {
       return mongoose.connection;
     }).catch(err => {
       console.error('MongoDB connection error:', err);
-      cached.promise = null; // ✅ Reset on failure so next request retries
       throw err;
     });
   }
-
   try {
     cached.conn = await cached.promise;
-    cached.promise = null; // ✅ Reset after success so reconnects work
   } catch (e) {
     cached.promise = null;
     throw e;
