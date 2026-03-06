@@ -2,17 +2,15 @@ import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Product from '@/models/Product';
 import Order from '@/models/Order';
-import { getAuthUser } from '@/lib/auth-server';
+import { checkAdmin } from '@/lib/auth-server';
 
-async function isAdmin(request: Request) {
-  const user = await getAuthUser(request);
-  return user && user.role === 'admin';
-}
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
   try {
-    if (!await isAdmin(request)) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    const { authorized, reason } = await checkAdmin(request);
+    if (!authorized) {
+      return NextResponse.json({ success: false, error: reason || 'Unauthorized' }, { status: 401 });
     }
 
     await dbConnect();
@@ -33,6 +31,6 @@ export async function GET(request: Request) {
       }
     });
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 400 });
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }

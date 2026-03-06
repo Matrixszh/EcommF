@@ -5,29 +5,27 @@ import Product from '@/models/Product'; // Ensure Product model is registered
 import crypto from 'crypto';
 import { getAuthUser } from '@/lib/auth-server';
 
-// Helper to check if user is admin
-async function getUser(request: Request) {
-  return getAuthUser(request);
-}
+export const runtime = 'nodejs';
 
 export async function GET(request: Request) {
   try {
     await dbConnect();
-    const user = await getUser(request);
+    const user = await getAuthUser(request);
 
     if (!user) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
     let orders;
-    if (user.role === 'admin') {
+    // Cast user to any to avoid TypeScript errors with lean() return type
+    if ((user as any).role === 'admin') {
       // Admin sees all orders
       orders = await Order.find({})
         .sort({ createdAt: -1 })
         .populate('products.productId');
     } else {
       // User sees only their orders
-      orders = await Order.find({ userId: user.firebaseUid })
+      orders = await Order.find({ userId: (user as any).firebaseUid })
         .sort({ createdAt: -1 })
         .populate('products.productId');
     }
@@ -41,7 +39,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     await dbConnect();
-    const user = await getUser(request);
+    const user = await getAuthUser(request);
     if (!user) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
@@ -49,7 +47,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     
     // Override userId with authenticated user's ID
-    body.userId = user.firebaseUid;
+    body.userId = (user as any).firebaseUid;
 
     // Basic validation
     if (!body.products || body.products.length === 0) {
@@ -97,39 +95,36 @@ export async function POST(request: Request) {
 
         if (!product) {
           // If update returns null, it means either product doesn't exist or stock < quantity
-          // We can try to find the product to give a better error message, but for now just throw
-          const existingProduct = await Product.findById(item.productId);
-          if (!existingProduct) {
-             throw new Error(`Product not found: ${item.productId}`);
-          } else {
-             throw new Error(`Insufficient stock for "${existingProduct.name}". Available: ${existingProduct.stock}, Requested: ${item.quantity}`);
-          }
+          throw new Error(`Insufficient stock for product ${item.productId}`);
         }
-        updatedProducts.push({ id: item.productId, quantity: item.quantity });
+        updatedProducts.push({ productId: item.productId, quantity: item.quantity });
       }
-    } catch (error: any) {
-      // Rollback if any update fails
-      console.error("Error updating stock, rolling back...", error);
-      for (const p of updatedProducts) {
-        await Product.findByIdAndUpdate(p.id, { $inc: { stock: p.quantity } });
-      }
-      return NextResponse.json({ success: false, error: error.message }, { status: 400 });
-    }
 
-    // 2. Create order
-    try {
+      // 2. Create Order
       const order = await Order.create(body);
+      
       return NextResponse.json({ success: true, data: order }, { status: 201 });
-    } catch (error: any) {
-      // Rollback stock if order creation fails
-      console.error("Error creating order, rolling back stock...", error);
-      for (const p of updatedProducts) {
-        await Product.findByIdAndUpdate(p.id, { $inc: { stock: p.quantity } });
+
+    } catch (stockError: any) {
+      // Rollback: If any stock update failed or order creation failed
+      // We need to increment back the stock for successfully updated products
+      console.error('Order creation failed, rolling back stock:', stockError);
+      
+      for (const item of updatedProducts) {
+        await Product.findByIdAndUpdate(
+          item.productId,
+          { $inc: { stock: item.quantity } }
+        );
       }
-      return NextResponse.json({ success: false, error: error.message }, { status: 400 });
+
+      return NextResponse.json({ 
+        success: false, 
+        error: stockError.message || 'Failed to create order due to stock issues' 
+      }, { status: 400 });
     }
 
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 400 });
+    console.error('Order API Error:', error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
