@@ -10,25 +10,29 @@ declare global {
 let redis: Redis | null = global.redisClient ?? null;
 
 if (!redis && redisUrl && redisUrl.startsWith('http')) {
-  // Ensure we have a token if required, or assume it's embedded in URL?
-  // Upstash client usually needs url and token.
+  // Ensure we have a token if required
   if (!redisToken) {
-    console.warn('[Redis] REST URL found but no token. Upstash Redis might fail if authentication is required.');
+    console.warn('[Redis] REST URL found but no token. Upstash Redis will likely fail authentication.');
   }
-  
+
   try {
     redis = new Redis({
       url: redisUrl,
       token: redisToken || '',
-      // Automatic deserialization is true by default, but we'll handle it carefully
     });
     console.log('[Redis] Client initialized (Upstash HTTP)');
-    global.redisClient = redis;
+
+    // Inject into global only if initialization didn't throw
+    if (typeof global !== 'undefined') {
+      (global as any).redisClient = redis;
+    }
   } catch (err) {
-    console.warn('[Redis] Failed to initialize Upstash client:', err);
+    console.error('[Redis] Failed to initialize Upstash client:', err);
+    redis = null;
   }
 } else if (redisUrl && !redisUrl.startsWith('http')) {
-  console.warn('[Redis] REDIS_URL is not an HTTP URL. @upstash/redis requires a REST URL (starting with http/https). Please set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN.');
+  console.warn(`[Redis] REDIS_URL (${redisUrl}) is not an HTTP URL. @upstash/redis requires a REST URL (starting with http/https). Please use UPSTASH_REDIS_REST_URL.`);
+  redis = null;
 } else if (!redisUrl) {
   console.warn('[Redis] No Redis URL found (UPSTASH_REDIS_REST_URL or REDIS_URL), caching disabled');
 }
@@ -58,6 +62,7 @@ export async function getOrSetCache<T>(
   fetcher: () => Promise<T>,
   ttl: number = 60
 ): Promise<T> {
+  // If redis is explicitly null or was disabled due to errors, skip caching
   if (!redis) {
     return fetcher();
   }
@@ -68,7 +73,7 @@ export async function getOrSetCache<T>(
 
     if (cachedData !== null && cachedData !== undefined) {
       console.log(`[CACHE HIT] ${key}`);
-      
+
       // If cachedData is a string but we expect an object, try parsing
       if (typeof cachedData === 'string') {
         try {
@@ -88,15 +93,26 @@ export async function getOrSetCache<T>(
 
     if (freshData !== null && freshData !== undefined) {
       // Upstash Set with options
-      // If freshData is object, Upstash serializes it.
-      // However, to be safe and consistent with retrieval logic, we explicit stringify if it's an object
       const valueToStore = typeof freshData === 'object' ? JSON.stringify(freshData) : freshData;
       await redis.set(key, valueToStore, { ex: ttl });
     }
 
     return freshData;
   } catch (error) {
-    console.error(`Redis cache error for key ${key}:`, error instanceof Error ? error.message : error);
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error(`Redis cache error for key ${key}:`, errorMsg);
+
+    // If it's an auth error, disable redis for this instance to avoid constant failing requests
+    if (errorMsg.includes('WRONGPASS') || errorMsg.includes('Unauthorized') || errorMsg.includes('token')) {
+      console.warn('[Redis] Authentication error detected. Disabling Redis client for the current process.');
+      redis = null;
+      // Update global client as well to avoid reuse in same lambda instance if possible
+      if (typeof global !== 'undefined') {
+        global.redisClient = null;
+      }
+    }
+
+    // Fall back to the fetcher (DB or Mock data)
     return fetcher();
   }
 }
