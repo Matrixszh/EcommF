@@ -15,7 +15,7 @@ export async function verifyAuth(request: Request) {
     const uid = decodedToken.uid;
 
     await dbConnect();
-    const user = await User.findOne({ firebaseUid: uid });
+    const user = await User.findOne({ firebaseUid: uid }).lean();
     return user;
   } catch (error) {
     console.error('Error verifying auth token:', error);
@@ -25,4 +25,23 @@ export async function verifyAuth(request: Request) {
 
 export async function getAuthUser(request: Request) {
   return verifyAuth(request);
+}
+
+export async function checkAdmin(request: Request) {
+  try {
+    const user = await getAuthUser(request);
+    if (!user) {
+      console.warn('[Admin Check] No user found from token');
+      return { authorized: false, reason: 'Authentication failed' };
+    }
+    // Check if user has role property and it is 'admin'
+    if ((user as any).role !== 'admin') {
+      console.warn(`[Admin Check] User ${(user as any)._id} (role: ${(user as any).role}) is not admin`);
+      return { authorized: false, reason: 'Insufficient permissions' };
+    }
+    return { authorized: true, user };
+  } catch (error) {
+    console.error('[Admin Check] Error verifying user:', error);
+    return { authorized: false, reason: 'Internal auth error' };
+  }
 }

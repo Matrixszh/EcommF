@@ -1,16 +1,10 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Product from '@/models/Product';
-import { getAuthUser } from '@/lib/auth-server';
+import { checkAdmin } from '@/lib/auth-server';
 import redis, { invalidateCache } from '@/lib/redis';
 
 export const runtime = 'nodejs';
-
-// Helper to check if user is admin
-async function isAdmin(request: Request) {
-  const user = await getAuthUser(request);
-  return user && user.role === 'admin';
-}
 
 export async function GET(request: Request) {
   try {
@@ -22,7 +16,7 @@ export async function GET(request: Request) {
 
     const query: any = {};
 
-    if (category) {
+    if (category && category !== 'all') {
       query.category = category;
     }
 
@@ -33,32 +27,51 @@ export async function GET(request: Request) {
       ];
     }
 
-    const products = await Product.find(query).limit(limit).sort({ createdAt: -1 });
+    const products = await Product.find(query)
+      .limit(limit)
+      .sort({ createdAt: -1 })
+      .lean();
     
     return NextResponse.json({ success: true, data: products });
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 400 });
+    console.error('[API] Error fetching products:', error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
 
 export async function POST(request: Request) {
   try {
-    if (!await isAdmin(request)) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    const { authorized, reason } = await checkAdmin(request);
+    if (!authorized) {
+      return NextResponse.json({ success: false, error: reason }, { status: 401 });
     }
 
     await dbConnect();
     const body = await request.json();
-    const product = await Product.create(body);
+
+    // Basic Validation
+    if (!body.name || !body.price || !body.description || !body.category) {
+      return NextResponse.json({ success: false, error: 'Missing required fields' }, { status: 400 });
+    }
+
+    const payload = {
+      ...body,
+      price: Number(body.price),
+      stock: Number(body.stock || 0),
+    };
+
+    const product = await Product.create(payload);
     
-    // Invalidate product list cache (v2) and featured products
+    // Invalidate caches
+    console.log('[API] Invalidating caches for new product');
     await Promise.all([
       invalidateCache('v2:products:*'),
-      redis?.del('v2:featured_products')
+      redis?.del('v2:featured_products').catch(err => console.error('Redis error:', err))
     ]);
     
     return NextResponse.json({ success: true, data: product }, { status: 201 });
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 400 });
+    console.error('[API] Error creating product:', error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
