@@ -44,7 +44,7 @@ export default function AdminProducts() {
     watch,
     formState: { errors },
   } = useForm<ProductFormData>({
-    resolver: zodResolver(productSchema),
+    resolver: zodResolver(productSchema) as any,
     defaultValues: {
       name: "",
       description: "",
