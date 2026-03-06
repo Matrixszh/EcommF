@@ -21,6 +21,12 @@ interface ProductCardProps {
 
 export default function ProductCard({ product }: ProductCardProps) {
   const { addItem } = useCart();
+  
+  if (!product || !product._id) {
+    console.error("[ProductCard] Product or _id missing:", product);
+    return null;
+  }
+
   const isOutOfStock = product.stock !== undefined && product.stock <= 0;
 
   return (

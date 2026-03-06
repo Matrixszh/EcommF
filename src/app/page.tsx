@@ -10,7 +10,8 @@ import { getOrSetCache } from "@/lib/redis";
 export const revalidate = 60;
 
 async function getFeaturedProducts() {
-  const cacheKey = 'featured_products';
+  // Use v2 prefix
+  const cacheKey = 'v2:featured_products';
   
   // Use Redis cache wrapper
   return getOrSetCache(cacheKey, async () => {
@@ -23,8 +24,13 @@ async function getFeaturedProducts() {
         .limit(6)
         .lean();
 
+      console.log(`[HomePage] Fetched ${products.length} featured products`);
+      
+      // Validate IDs
+      const validProducts = products.filter(p => p._id);
+
       // Serialize to plain JSON (handles ObjectId and Date)
-      return JSON.parse(JSON.stringify(products));
+      return JSON.parse(JSON.stringify(validProducts));
     } catch (error) {
       console.error("Error fetching products from DB:", error);
       // Return mock data if DB connection fails

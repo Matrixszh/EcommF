@@ -12,7 +12,8 @@ import { notFound } from "next/navigation";
 export const revalidate = 60;
 
 async function getProduct(id: string) {
-  const cacheKey = `product:${id}`;
+  // Use v2 prefix to invalidate old cache and ensure clean state
+  const cacheKey = `v2:product:${id}`;
   
   return getOrSetCache(cacheKey, async () => {
     try {

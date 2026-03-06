@@ -65,6 +65,13 @@ export async function GET() {
     // Clear existing products to avoid duplicates if re-run
     await Product.deleteMany({});
     
+    // Invalidate all product caches
+    const { default: redis } = await import('@/lib/redis');
+    if (redis && redis.status === 'ready') {
+      await redis.flushall();
+      console.log('Redis cache flushed after seeding');
+    }
+
     const products = await Product.insertMany(mockProducts);
     return NextResponse.json({ success: true, count: products.length, message: "Database seeded successfully" });
   } catch (error: any) {

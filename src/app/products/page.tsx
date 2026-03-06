@@ -12,7 +12,8 @@ async function getProducts(searchParams: { [key: string]: string | string[] | un
   const category = searchParams.category as string;
   const search = searchParams.search as string;
   
-  const cacheKey = `products:category=${category || 'all'}:search=${search || 'none'}`;
+  // Use v2 prefix to invalidate old cache
+  const cacheKey = `v2:products:category=${category || 'all'}:search=${search || 'none'}`;
 
   return getOrSetCache(cacheKey, async () => {
     await dbConnect();
@@ -29,8 +30,20 @@ async function getProducts(searchParams: { [key: string]: string | string[] | un
     }
 
     try {
+      console.log(`[ProductsPage] Fetching products from DB with query:`, JSON.stringify(query));
       const products = await Product.find(query).sort({ createdAt: -1 }).lean();
-      return JSON.parse(JSON.stringify(products));
+      console.log(`[ProductsPage] Fetched ${products.length} products`);
+      
+      // Validate IDs before caching
+      const validProducts = products.filter(p => {
+        if (!p._id) {
+          console.error('[ProductsPage] Product missing _id:', p);
+          return false;
+        }
+        return true;
+      });
+
+      return JSON.parse(JSON.stringify(validProducts));
     } catch (error) {
       console.error("Error fetching products:", error);
       return [];

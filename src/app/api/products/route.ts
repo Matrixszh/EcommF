@@ -50,8 +50,11 @@ export async function POST(request: Request) {
     const body = await request.json();
     const product = await Product.create(body);
     
-    // Invalidate product list cache
-    await invalidateCache('products:*');
+    // Invalidate product list cache (v2) and featured products
+    await Promise.all([
+      invalidateCache('v2:products:*'),
+      redis?.del('v2:featured_products')
+    ]);
     
     return NextResponse.json({ success: true, data: product }, { status: 201 });
   } catch (error: any) {
