@@ -64,9 +64,18 @@ export async function GET(request: Request) {
   try {
     // Check Redis
     if (redis) {
-      await redis.set('debug-test', 'ok', 'EX', 10);
-      const val = await redis.get('debug-test');
-      status.redis.status = val === 'ok' ? 'connected' : 'failed';
+      const redisPromise = (async () => {
+        await redis.set('debug-test', 'ok', 'EX', 10);
+        const val = await redis.get('debug-test');
+        return val === 'ok' ? 'connected' : 'failed';
+      })();
+
+      const timeoutPromise = new Promise<string>((resolve) => 
+        setTimeout(() => resolve('timeout'), 2000)
+      );
+
+      const statusResult = await Promise.race([redisPromise, timeoutPromise]);
+      status.redis.status = statusResult;
     } else {
       status.redis.status = 'disabled (no client)';
     }
