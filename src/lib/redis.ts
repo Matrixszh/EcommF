@@ -6,19 +6,17 @@ const redisUrl = process.env.REDIS_URL;
 
 if (redisUrl) {
   redis = new Redis(redisUrl, {
-    maxRetriesPerRequest: 1, // Fail fast if Redis is down
-    connectTimeout: 5000,    // 5s connection timeout
-    retryStrategy: (times) => {
-      // Stop retrying after 3 attempts
-      if (times > 3) {
-        return null;
-      }
-      return Math.min(times * 50, 2000);
-    },
-    enableOfflineQueue: false, // Fail fast if disconnected
-    lazyConnect: true, // Do not connect on import, wait for first command
-    family: 0, // Force IPv4/IPv6 dual stack resolution
-  });
+  maxRetriesPerRequest: 1,
+  connectTimeout: 5000,
+  retryStrategy: (times) => {
+    if (times > 3) return null;
+    return Math.min(times * 50, 2000);
+  },
+  enableOfflineQueue: false,
+  lazyConnect: true,
+  family: 0,
+  tls: {} // IMPORTANT FOR CLOUD REDIS
+});
 
   redis.on('error', (err) => {
     // Log error but do not crash
