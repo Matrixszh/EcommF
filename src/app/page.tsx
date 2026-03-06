@@ -6,6 +6,7 @@ import dbConnect from "@/lib/mongodb";
 import Product from "@/models/Product";
 import { getOrSetCache } from "@/lib/redis";
 
+export const dynamic = 'force-dynamic';
 // Enable ISR with 60-second revalidation
 export const revalidate = 60;
 

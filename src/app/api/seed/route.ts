@@ -67,8 +67,8 @@ export async function GET() {
     
     // Invalidate all product caches
     const { default: redis } = await import('@/lib/redis');
-    if (redis && redis.status === 'ready') {
-      await redis.flushall();
+    if (redis) {
+      await redis.flushdb();
       console.log('Redis cache flushed after seeding');
     }
 

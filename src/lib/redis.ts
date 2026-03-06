@@ -1,7 +1,7 @@
-import Redis from 'ioredis';
+import { Redis } from '@upstash/redis';
 
-const redisUrl = process.env.REDIS_URL;
-const useTls = redisUrl?.startsWith('rediss://') || process.env.REDIS_TLS === 'true';
+const redisUrl = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL || process.env.REDIS_URL;
+const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN || process.env.REDIS_TOKEN;
 
 declare global {
   var redisClient: Redis | null | undefined;
@@ -9,30 +9,28 @@ declare global {
 
 let redis: Redis | null = global.redisClient ?? null;
 
-if (!redis && redisUrl) {
-  redis = new Redis(redisUrl, {
-    maxRetriesPerRequest: 1,
-    connectTimeout: 5000,
-    retryStrategy: (times) => {
-      if (times > 3) return null;
-      return Math.min(times * 50, 2000);
-    },
-    enableOfflineQueue: false,
-    lazyConnect: true,
-    family: 0,
-    ...(useTls ? { tls: {} } : {}),
-  });
-
-  redis.on('error', (err) => {
-    console.warn('[Redis] Client Error:', err.message);
-  });
-
-  redis.on('connect', () => {
-    console.log('[Redis] Connected');
-  });
-  global.redisClient = redis;
+if (!redis && redisUrl && redisUrl.startsWith('http')) {
+  // Ensure we have a token if required, or assume it's embedded in URL?
+  // Upstash client usually needs url and token.
+  if (!redisToken) {
+    console.warn('[Redis] REST URL found but no token. Upstash Redis might fail if authentication is required.');
+  }
+  
+  try {
+    redis = new Redis({
+      url: redisUrl,
+      token: redisToken || '',
+      // Automatic deserialization is true by default, but we'll handle it carefully
+    });
+    console.log('[Redis] Client initialized (Upstash HTTP)');
+    global.redisClient = redis;
+  } catch (err) {
+    console.warn('[Redis] Failed to initialize Upstash client:', err);
+  }
+} else if (redisUrl && !redisUrl.startsWith('http')) {
+  console.warn('[Redis] REDIS_URL is not an HTTP URL. @upstash/redis requires a REST URL (starting with http/https). Please set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN.');
 } else if (!redisUrl) {
-  console.warn('[Redis] No REDIS_URL found, caching disabled');
+  console.warn('[Redis] No Redis URL found (UPSTASH_REDIS_REST_URL or REDIS_URL), caching disabled');
 }
 
 export default redis;
@@ -40,31 +38,16 @@ export default redis;
 // Helper to invalidate cache patterns
 export async function invalidateCache(pattern: string) {
   if (!redis) return;
-  // If lazyConnect is true, status might be 'wait' initially.
-  // We allow 'wait', 'connecting', 'ready' to proceed.
-  if (redis.status !== 'ready') {
-    console.warn('[Redis] Skipping invalidation, client not ready/connecting');
-    return;
-  }
   
   try {
-    const stream = redis.scanStream({
-      match: pattern,
-      count: 100
-    });
+    // Upstash 'keys' command (careful with large datasets, but usually fine for Vercel/Upstash scale)
+    // Scan is better but 'keys' is supported by REST API
+    const keys = await redis.keys(pattern);
     
-    stream.on('data', (keys: string[]) => {
-      if (keys.length) {
-        redis?.del(keys).catch(err => console.error('[Redis] Del Error:', err));
-      }
-    });
-
-    stream.on('error', (err) => {
-      console.error('[Redis] Scan Stream Error:', err);
-    });
-    
-    // Wait for stream to finish? scanStream is async in nature but doesn't return promise.
-    // We just fire and forget for invalidation to avoid blocking.
+    if (keys.length > 0) {
+      await redis.del(...keys);
+      console.log(`[Redis] Invalidated ${keys.length} keys for pattern ${pattern}`);
+    }
   } catch (error) {
     console.error(`[Redis] Error invalidating pattern ${pattern}:`, error);
   }
@@ -75,68 +58,40 @@ export async function getOrSetCache<T>(
   fetcher: () => Promise<T>,
   ttl: number = 60
 ): Promise<T> {
-  // Check if Redis is configured
   if (!redis) {
     return fetcher();
   }
 
-  // Check Redis status. 
-  // 'wait' = initialized but not connected (lazyConnect)
-  // 'ready' = connected
-  // 'connecting'/'reconnecting' = trying to connect
-  // If status is 'end' or 'close', we should definitely skip.
-  if (['end', 'close'].includes(redis.status)) {
-    console.warn(`[Redis] Client status is '${redis.status}', skipping cache for ${key}`);
-    return fetcher();
-  }
-
-  if (redis.status === 'wait') {
-    redis.connect().catch((error) => {
-      console.warn('[Redis] Connect failed:', error instanceof Error ? error.message : error);
-    });
-    return fetcher();
-  }
-
-  if (redis.status !== 'ready') {
-    return fetcher();
-  }
-
   try {
-    // Race: Redis get vs Timeout
-    // Because lazyConnect is true, this .get() call will trigger the actual connection.
-    const cachePromise = redis.get(key);
-    
-    // Reduce timeout to 1.5s to be even faster on fallback
-    const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(undefined), 1500));
+    // Upstash automatically deserializes JSON if stored as such
+    const cachedData = await redis.get<T>(key);
 
-    const cachedData = await Promise.race([cachePromise, timeoutPromise]) as string | undefined | null;
-
-    if (cachedData) {
+    if (cachedData !== null && cachedData !== undefined) {
       console.log(`[CACHE HIT] ${key}`);
-      try {
-        return JSON.parse(cachedData);
-      } catch (parseError) {
-        console.error(`[CACHE ERROR] Failed to parse JSON for key ${key}:`, parseError);
+      
+      // If cachedData is a string but we expect an object, try parsing
+      if (typeof cachedData === 'string') {
+        try {
+          // Check if it looks like JSON
+          if ((cachedData as string).startsWith('{') || (cachedData as string).startsWith('[')) {
+             return JSON.parse(cachedData);
+          }
+        } catch (e) {
+          // Not JSON, return as is
+        }
       }
+      return cachedData;
     }
 
-    if (cachedData === undefined) {
-      console.warn(`[CACHE TIMEOUT] Redis took too long for key ${key}, falling back to DB`);
-    } else if (cachedData === null) {
-      console.log(`[CACHE MISS] ${key}`);
-    }
-
-    // Fetch fresh data
+    console.log(`[CACHE MISS] ${key}`);
     const freshData = await fetcher();
 
-    // Cache it (fire and forget)
-    // Only cache if we are connected or connecting (don't queue if closed)
-    if (freshData !== null && freshData !== undefined && redis.status === 'ready') {
-      redis.set(key, JSON.stringify(freshData), 'EX', ttl).catch(err => {
-        console.error(`Failed to set cache for ${key}:`, err.message);
-      });
-    } else {
-      console.warn(`[CACHE SKIP] Not caching null/undefined data for key ${key}`);
+    if (freshData !== null && freshData !== undefined) {
+      // Upstash Set with options
+      // If freshData is object, Upstash serializes it.
+      // However, to be safe and consistent with retrieval logic, we explicit stringify if it's an object
+      const valueToStore = typeof freshData === 'object' ? JSON.stringify(freshData) : freshData;
+      await redis.set(key, valueToStore, { ex: ttl });
     }
 
     return freshData;

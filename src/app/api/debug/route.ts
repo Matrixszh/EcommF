@@ -17,7 +17,7 @@ export async function GET(request: Request) {
     env: {
       NODE_ENV: process.env.NODE_ENV,
       MONGODB_URI_DEFINED: !!process.env.MONGODB_URI,
-      REDIS_URL_DEFINED: !!process.env.REDIS_URL,
+      REDIS_URL_DEFINED: !!(process.env.UPSTASH_REDIS_REST_URL || process.env.REDIS_URL),
       CLOUDINARY_DEFINED: !!process.env.CLOUDINARY_CLOUD_NAME,
       NEXT_PUBLIC_FIREBASE_PROJECT_ID: !!process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
     },
@@ -35,15 +35,14 @@ export async function GET(request: Request) {
   };
 
   try {
-    // Check Redis
     if (redis) {
       if (flush === 'true') {
-        await redis.flushall();
+        await redis.flushdb();
         status.redis.action = 'FLUSHED';
       }
 
       const redisPromise = (async () => {
-        await redis.set('debug-test', 'ok', 'EX', 10);
+        await redis.set('debug-test', 'ok', { ex: 10 });
         const val = await redis.get('debug-test');
         return val === 'ok' ? 'connected' : 'failed';
       })();
@@ -63,22 +62,19 @@ export async function GET(request: Request) {
   }
 
   try {
-    // Check MongoDB
     await dbConnect();
     status.mongodb.status = 'connected';
     status.mongodb.readyState = mongoose.connection.readyState;
     
-    // Check Data
     const count = await Product.countDocuments();
     status.data.productCount = count;
     
-    // Get last 5 products
     const products = await Product.find()
       .sort({ createdAt: -1 })
       .limit(5)
       .select('_id name images category price createdAt')
       .lean();
-      
+    
     status.data.products = products;
 
     if (checkId) {
