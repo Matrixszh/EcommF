@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Product from '@/models/Product';
 import { getAuthUser } from '@/lib/auth-server';
+import redis, { invalidateCache } from '@/lib/redis';
 
 // Helper to check if user is admin
 async function isAdmin(request: Request) {
@@ -37,8 +38,6 @@ export async function GET(request: Request) {
     return NextResponse.json({ success: false, error: error.message }, { status: 400 });
   }
 }
-
-import { invalidateCache } from '@/lib/redis';
 
 export async function POST(request: Request) {
   try {
