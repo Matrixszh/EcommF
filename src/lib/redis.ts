@@ -1,3 +1,4 @@
+export const runtime = "nodejs";
 import Redis from 'ioredis';
 
 let redis: Redis | null = null;
