@@ -1,82 +1,107 @@
 import Redis from 'ioredis';
 
-const getRedisClient = () => {
-  const redisUrl = process.env.REDIS_URL;
-  
-  if (!redisUrl) {
-    console.warn('REDIS_URL is not defined. Redis caching will be disabled.');
-    return null;
-  }
+let redis: Redis | null = null;
+const redisUrl = process.env.REDIS_URL;
 
-  try {
-    const client = new Redis(redisUrl, {
-      maxRetriesPerRequest: 1, // Fail fast if Redis is down
-      connectTimeout: 5000,    // 5s connection timeout
-      enableOfflineQueue: false, // Don't queue commands if Redis is down
-      retryStrategy: (times) => {
-        // Stop retrying after 3 attempts
-        if (times > 3) {
-          return null;
-        }
-        return Math.min(times * 50, 2000);
-      },
-      reconnectOnError: (err) => {
-        const targetError = 'READONLY';
-        if (err.message.includes(targetError)) {
-          // Only reconnect when the error starts with "READONLY"
-          return true;
-        }
-        return false;
+if (redisUrl) {
+  redis = new Redis(redisUrl, {
+    maxRetriesPerRequest: 1, // Fail fast if Redis is down
+    connectTimeout: 5000,    // 5s connection timeout
+    retryStrategy: (times) => {
+      // Stop retrying after 3 attempts
+      if (times > 3) {
+        return null;
       }
-    });
+      return Math.min(times * 50, 2000);
+    },
+    enableOfflineQueue: false, // Fail fast if disconnected
+    lazyConnect: true, // Do not connect on import, wait for first command
+    family: 0, // Force IPv4/IPv6 dual stack resolution
+  });
 
-    client.on('error', (err) => {
-      // Suppress connection errors to avoid crashing the app, just log them
-      console.error('Redis Client Error:', err.message);
-    });
+  redis.on('error', (err) => {
+    // Log error but do not crash
+    console.warn('[Redis] Client Error:', err.message);
+  });
 
-    return client;
-  } catch (error) {
-    console.error('Failed to create Redis client:', error);
-    return null;
-  }
-};
-
-// Singleton instance
-const redis = getRedisClient();
+  redis.on('connect', () => {
+    console.log('[Redis] Connected');
+  });
+} else {
+  console.warn('[Redis] No REDIS_URL found, caching disabled');
+}
 
 export default redis;
 
-/**
- * Cache wrapper helper with timeout protection
- * @param key Cache key
- * @param fetcher Function to fetch data if cache miss
- * @param ttl Time to live in seconds (default 60)
- */
+// Helper to invalidate cache patterns
+export async function invalidateCache(pattern: string) {
+  if (!redis) return;
+  // If lazyConnect is true, status might be 'wait' initially.
+  // We allow 'wait', 'connecting', 'ready' to proceed.
+  if (!['ready', 'connecting', 'wait'].includes(redis.status)) {
+    console.warn('[Redis] Skipping invalidation, client not ready/connecting');
+    return;
+  }
+  
+  try {
+    const stream = redis.scanStream({
+      match: pattern,
+      count: 100
+    });
+    
+    stream.on('data', (keys: string[]) => {
+      if (keys.length) {
+        redis?.del(keys).catch(err => console.error('[Redis] Del Error:', err));
+      }
+    });
+
+    stream.on('error', (err) => {
+      console.error('[Redis] Scan Stream Error:', err);
+    });
+    
+    // Wait for stream to finish? scanStream is async in nature but doesn't return promise.
+    // We just fire and forget for invalidation to avoid blocking.
+  } catch (error) {
+    console.error(`[Redis] Error invalidating pattern ${pattern}:`, error);
+  }
+}
+
 export async function getOrSetCache<T>(
   key: string,
   fetcher: () => Promise<T>,
   ttl: number = 60
 ): Promise<T> {
-  // If Redis is not initialized or not ready, skip it entirely
-  if (!redis || redis.status !== 'ready') {
+  // Check if Redis is configured
+  if (!redis) {
+    return fetcher();
+  }
+
+  // Check Redis status. 
+  // 'wait' = initialized but not connected (lazyConnect)
+  // 'ready' = connected
+  // 'connecting'/'reconnecting' = trying to connect
+  // If status is 'end' or 'close', we should definitely skip.
+  if (['end', 'close'].includes(redis.status)) {
+    console.warn(`[Redis] Client status is '${redis.status}', skipping cache for ${key}`);
     return fetcher();
   }
 
   try {
-    // Race Redis get against a 2s timeout
+    // Race: Redis get vs Timeout
+    // Because lazyConnect is true, this .get() call will trigger the actual connection.
     const cachePromise = redis.get(key);
-    const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(undefined), 2000));
     
+    // Reduce timeout to 1.5s to be even faster on fallback
+    const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(undefined), 1500));
+
     const cachedData = await Promise.race([cachePromise, timeoutPromise]) as string | undefined | null;
-    
+
     if (cachedData) {
       console.log(`[CACHE HIT] ${key}`);
       try {
         return JSON.parse(cachedData);
       } catch (parseError) {
         console.error(`[CACHE ERROR] Failed to parse JSON for key ${key}:`, parseError);
-        // If parse fails, treat as miss
       }
     }
 
@@ -86,12 +111,12 @@ export async function getOrSetCache<T>(
       console.log(`[CACHE MISS] ${key}`);
     }
 
-    // Cache miss or timeout - fetch fresh data
+    // Fetch fresh data
     const freshData = await fetcher();
 
-    // Save to cache (fire and forget, don't await)
-    // IMPORTANT: Only cache if freshData is not null/undefined to avoid caching empty states
-    if (freshData !== null && freshData !== undefined && redis.status === 'ready') {
+    // Cache it (fire and forget)
+    // Only cache if we are connected or connecting (don't queue if closed)
+    if (freshData !== null && freshData !== undefined && ['ready', 'connecting', 'wait'].includes(redis.status)) {
       redis.set(key, JSON.stringify(freshData), 'EX', ttl).catch(err => {
         console.error(`Failed to set cache for ${key}:`, err.message);
       });
@@ -101,40 +126,7 @@ export async function getOrSetCache<T>(
 
     return freshData;
   } catch (error) {
-    // If Redis throws (e.g. offline queue disabled), just log and fallback
     console.error(`Redis cache error for key ${key}:`, error instanceof Error ? error.message : error);
-    // Fallback to fresh data if Redis fails
     return fetcher();
-  }
-}
-
-/**
- * Invalidate cache keys matching a pattern
- * @param pattern Glob pattern (e.g. "products:*")
- */
-export async function invalidateCache(pattern: string): Promise<void> {
-  if (!redis || redis.status !== 'ready') return;
-  
-  try {
-    const stream = redis.scanStream({
-      match: pattern,
-      count: 100
-    });
-    
-    stream.on('data', async (keys: string[]) => {
-      if (keys.length) {
-        await redis.unlink(keys).catch(err => console.error('Error unlinking keys:', err));
-      }
-    });
-    
-    return new Promise((resolve, reject) => {
-      stream.on('end', resolve);
-      stream.on('error', (err) => {
-        console.error('Redis scan stream error:', err);
-        resolve(); // Resolve anyway to avoid crashing
-      });
-    });
-  } catch (error) {
-    console.error(`Error invalidating cache for pattern ${pattern}:`, error);
   }
 }
