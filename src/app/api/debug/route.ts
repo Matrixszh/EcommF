@@ -9,6 +9,7 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const checkId = searchParams.get('id');
+  const flush = searchParams.get('flush');
 
   const status: any = {
     timestamp: new Date().toISOString(),
@@ -31,6 +32,34 @@ export async function GET(request: Request) {
       products: [],
     }
   };
+
+  try {
+    // Check Redis
+    if (redis) {
+      if (flush === 'true') {
+        await redis.flushall();
+        status.redis.action = 'FLUSHED';
+      }
+
+      const redisPromise = (async () => {
+        await redis.set('debug-test', 'ok', 'EX', 10);
+        const val = await redis.get('debug-test');
+        return val === 'ok' ? 'connected' : 'failed';
+      })();
+
+      const timeoutPromise = new Promise<string>((resolve) => 
+        setTimeout(() => resolve('timeout'), 2000)
+      );
+
+      const statusResult = await Promise.race([redisPromise, timeoutPromise]);
+      status.redis.status = statusResult;
+    } else {
+      status.redis.status = 'disabled (no client)';
+    }
+  } catch (error: any) {
+    status.redis.status = 'error';
+    status.redis.error = error.message;
+  }
 
   try {
     // Check MongoDB
@@ -59,29 +88,6 @@ export async function GET(request: Request) {
   } catch (error: any) {
     status.mongodb.status = 'error';
     status.mongodb.error = error.message;
-  }
-
-  try {
-    // Check Redis
-    if (redis) {
-      const redisPromise = (async () => {
-        await redis.set('debug-test', 'ok', 'EX', 10);
-        const val = await redis.get('debug-test');
-        return val === 'ok' ? 'connected' : 'failed';
-      })();
-
-      const timeoutPromise = new Promise<string>((resolve) => 
-        setTimeout(() => resolve('timeout'), 2000)
-      );
-
-      const statusResult = await Promise.race([redisPromise, timeoutPromise]);
-      status.redis.status = statusResult;
-    } else {
-      status.redis.status = 'disabled (no client)';
-    }
-  } catch (error: any) {
-    status.redis.status = 'error';
-    status.redis.error = error.message;
   }
 
   return NextResponse.json(status);

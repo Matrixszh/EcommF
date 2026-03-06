@@ -16,9 +16,10 @@ async function getProduct(id: string) {
   
   return getOrSetCache(cacheKey, async () => {
     try {
+      console.log(`[ProductPage] Fetching product from DB: ${id}`);
       // Validate ObjectId format to prevent CastError
       if (!id.match(/^[0-9a-fA-F]{24}$/)) {
-        console.error(`Invalid product ID format: ${id}`);
+        console.error(`[ProductPage] Invalid product ID format: ${id}`);
         return null;
       }
       
@@ -26,13 +27,14 @@ async function getProduct(id: string) {
       const product = await Product.findById(id).lean();
       
       if (!product) {
-        console.warn(`Product not found in DB: ${id}`);
+        console.warn(`[ProductPage] Product not found in DB: ${id}`);
         return null;
       }
       
+      console.log(`[ProductPage] Product found in DB: ${id}`);
       return JSON.parse(JSON.stringify(product));
     } catch (error) {
-      console.error("Error fetching product:", error);
+      console.error(`[ProductPage] Error fetching product ${id}:`, error);
       // In case of DB error, return null to show 404 or let it bubble up
       // We choose to return null here to be safe and avoid 500
       return null;
@@ -42,9 +44,11 @@ async function getProduct(id: string) {
 
 export default async function ProductPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = await params;
+  console.log(`[ProductPage] Rendering page for ID: ${resolvedParams.id}`);
   const product = await getProduct(resolvedParams.id);
 
   if (!product) {
+    console.warn(`[ProductPage] Product is null for ID: ${resolvedParams.id}, triggering notFound()`);
     notFound();
   }
 

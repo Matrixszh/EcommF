@@ -72,12 +72,17 @@ export async function getOrSetCache<T>(
     
     if (cachedData) {
       console.log(`[CACHE HIT] ${key}`);
-      return JSON.parse(cachedData);
+      try {
+        return JSON.parse(cachedData);
+      } catch (parseError) {
+        console.error(`[CACHE ERROR] Failed to parse JSON for key ${key}:`, parseError);
+        // If parse fails, treat as miss
+      }
     }
 
     if (cachedData === undefined) {
       console.warn(`[CACHE TIMEOUT] Redis took too long for key ${key}, falling back to DB`);
-    } else {
+    } else if (cachedData === null) {
       console.log(`[CACHE MISS] ${key}`);
     }
 
@@ -85,10 +90,13 @@ export async function getOrSetCache<T>(
     const freshData = await fetcher();
 
     // Save to cache (fire and forget, don't await)
-    if (freshData && redis.status === 'ready') {
+    // IMPORTANT: Only cache if freshData is not null/undefined to avoid caching empty states
+    if (freshData !== null && freshData !== undefined && redis.status === 'ready') {
       redis.set(key, JSON.stringify(freshData), 'EX', ttl).catch(err => {
         console.error(`Failed to set cache for ${key}:`, err.message);
       });
+    } else {
+      console.warn(`[CACHE SKIP] Not caching null/undefined data for key ${key}`);
     }
 
     return freshData;
