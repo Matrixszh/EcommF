@@ -12,6 +12,7 @@ const getRedisClient = () => {
     const client = new Redis(redisUrl, {
       maxRetriesPerRequest: 1, // Fail fast if Redis is down
       connectTimeout: 5000,    // 5s connection timeout
+      enableOfflineQueue: false, // Don't queue commands if Redis is down
       retryStrategy: (times) => {
         // Stop retrying after 3 attempts
         if (times > 3) {
@@ -57,7 +58,8 @@ export async function getOrSetCache<T>(
   fetcher: () => Promise<T>,
   ttl: number = 60
 ): Promise<T> {
-  if (!redis) {
+  // If Redis is not initialized or not ready, skip it entirely
+  if (!redis || redis.status !== 'ready') {
     return fetcher();
   }
 
@@ -91,7 +93,8 @@ export async function getOrSetCache<T>(
 
     return freshData;
   } catch (error) {
-    console.error(`Redis cache error for key ${key}:`, error);
+    // If Redis throws (e.g. offline queue disabled), just log and fallback
+    console.error(`Redis cache error for key ${key}:`, error instanceof Error ? error.message : error);
     // Fallback to fresh data if Redis fails
     return fetcher();
   }

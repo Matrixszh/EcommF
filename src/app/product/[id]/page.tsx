@@ -16,13 +16,13 @@ async function getProduct(id: string) {
   
   return getOrSetCache(cacheKey, async () => {
     try {
-      await dbConnect();
       // Validate ObjectId format to prevent CastError
       if (!id.match(/^[0-9a-fA-F]{24}$/)) {
         console.error(`Invalid product ID format: ${id}`);
         return null;
       }
       
+      await dbConnect();
       const product = await Product.findById(id).lean();
       
       if (!product) {
@@ -33,7 +33,9 @@ async function getProduct(id: string) {
       return JSON.parse(JSON.stringify(product));
     } catch (error) {
       console.error("Error fetching product:", error);
-      throw error; // Throw error to trigger 500 instead of 404
+      // In case of DB error, return null to show 404 or let it bubble up
+      // We choose to return null here to be safe and avoid 500
+      return null;
     }
   });
 }
