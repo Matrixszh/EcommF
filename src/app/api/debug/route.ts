@@ -4,6 +4,7 @@ import redis from '@/lib/redis';
 import Product from '@/models/Product';
 import mongoose from 'mongoose';
 
+export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {

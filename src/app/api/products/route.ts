@@ -4,6 +4,8 @@ import Product from '@/models/Product';
 import { getAuthUser } from '@/lib/auth-server';
 import redis, { invalidateCache } from '@/lib/redis';
 
+export const runtime = 'nodejs';
+
 // Helper to check if user is admin
 async function isAdmin(request: Request) {
   const user = await getAuthUser(request);

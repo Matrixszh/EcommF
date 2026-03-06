@@ -3,6 +3,8 @@ import dbConnect from '@/lib/mongodb';
 import Order from '@/models/Order';
 import { getAuthUser } from '@/lib/auth-server';
 
+export const runtime = 'nodejs';
+
 async function isAdmin(request: Request) {
   const user = await getAuthUser(request);
   return user && user.role === 'admin';

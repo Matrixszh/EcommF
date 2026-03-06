@@ -1,32 +1,37 @@
-export const runtime = "nodejs";
 import Redis from 'ioredis';
 
-let redis: Redis | null = null;
 const redisUrl = process.env.REDIS_URL;
+const useTls = redisUrl?.startsWith('rediss://') || process.env.REDIS_TLS === 'true';
 
-if (redisUrl) {
+declare global {
+  var redisClient: Redis | null | undefined;
+}
+
+let redis: Redis | null = global.redisClient ?? null;
+
+if (!redis && redisUrl) {
   redis = new Redis(redisUrl, {
-  maxRetriesPerRequest: 1,
-  connectTimeout: 5000,
-  retryStrategy: (times) => {
-    if (times > 3) return null;
-    return Math.min(times * 50, 2000);
-  },
-  enableOfflineQueue: false,
-  lazyConnect: true,
-  family: 0,
-  tls: {} // IMPORTANT FOR CLOUD REDIS
-});
+    maxRetriesPerRequest: 1,
+    connectTimeout: 5000,
+    retryStrategy: (times) => {
+      if (times > 3) return null;
+      return Math.min(times * 50, 2000);
+    },
+    enableOfflineQueue: false,
+    lazyConnect: true,
+    family: 0,
+    ...(useTls ? { tls: {} } : {}),
+  });
 
   redis.on('error', (err) => {
-    // Log error but do not crash
     console.warn('[Redis] Client Error:', err.message);
   });
 
   redis.on('connect', () => {
     console.log('[Redis] Connected');
   });
-} else {
+  global.redisClient = redis;
+} else if (!redisUrl) {
   console.warn('[Redis] No REDIS_URL found, caching disabled');
 }
 
@@ -37,7 +42,7 @@ export async function invalidateCache(pattern: string) {
   if (!redis) return;
   // If lazyConnect is true, status might be 'wait' initially.
   // We allow 'wait', 'connecting', 'ready' to proceed.
-  if (!['ready', 'connecting', 'wait'].includes(redis.status)) {
+  if (redis.status !== 'ready') {
     console.warn('[Redis] Skipping invalidation, client not ready/connecting');
     return;
   }
@@ -85,6 +90,17 @@ export async function getOrSetCache<T>(
     return fetcher();
   }
 
+  if (redis.status === 'wait') {
+    redis.connect().catch((error) => {
+      console.warn('[Redis] Connect failed:', error instanceof Error ? error.message : error);
+    });
+    return fetcher();
+  }
+
+  if (redis.status !== 'ready') {
+    return fetcher();
+  }
+
   try {
     // Race: Redis get vs Timeout
     // Because lazyConnect is true, this .get() call will trigger the actual connection.
@@ -115,7 +131,7 @@ export async function getOrSetCache<T>(
 
     // Cache it (fire and forget)
     // Only cache if we are connected or connecting (don't queue if closed)
-    if (freshData !== null && freshData !== undefined && ['ready', 'connecting', 'wait'].includes(redis.status)) {
+    if (freshData !== null && freshData !== undefined && redis.status === 'ready') {
       redis.set(key, JSON.stringify(freshData), 'EX', ttl).catch(err => {
         console.error(`Failed to set cache for ${key}:`, err.message);
       });
