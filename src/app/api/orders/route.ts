@@ -9,38 +9,50 @@ export const runtime = 'nodejs';
 
 export async function GET(request: Request) {
   try {
+    console.log('[API] /api/orders GET called');
     await dbConnect();
     const user = await getAuthUser(request);
 
     if (!user) {
+      console.warn('[API] Unauthorized orders fetch attempt');
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
     let orders;
     // Cast user to any to avoid TypeScript errors with lean() return type
     if ((user as any).role === 'admin') {
+      console.log(`[API] Admin fetching all orders: ${(user as any).email}`);
       // Admin sees all orders
       orders = await Order.find({})
         .sort({ createdAt: -1 })
         .populate('products.productId');
     } else {
+      console.log(`[API] User fetching own orders: ${(user as any).email}`);
       // User sees only their orders
       orders = await Order.find({ userId: (user as any).firebaseUid })
         .sort({ createdAt: -1 })
         .populate('products.productId');
     }
     
+    console.log(`[API] Found ${orders.length} orders`);
     return NextResponse.json({ success: true, data: orders });
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 400 });
+    console.error('[API] Error fetching orders:', error);
+    return NextResponse.json({ 
+      success: false, 
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined 
+    }, { status: 500 });
   }
 }
 
 export async function POST(request: Request) {
   try {
+    console.log('[API] /api/orders POST called');
     await dbConnect();
     const user = await getAuthUser(request);
     if (!user) {
+      console.warn('[API] Unauthorized order creation attempt');
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -56,8 +68,10 @@ export async function POST(request: Request) {
 
     // Verify Razorpay Payment if present
     if (body.razorpay_payment_id && body.razorpay_order_id && body.razorpay_signature) {
+      console.log('[API] Verifying Razorpay payment');
       const keySecret = process.env.RAZORPAY_KEY_SECRET;
       if (!keySecret) {
+        console.error('[API] Razorpay key secret missing');
         return NextResponse.json(
           { success: false, error: "Razorpay key secret is not configured" },
           { status: 500 }
@@ -70,6 +84,7 @@ export async function POST(request: Request) {
         .digest("hex");
 
       if (generated_signature !== body.razorpay_signature) {
+        console.warn('[API] Invalid payment signature');
         return NextResponse.json(
           { success: false, error: "Invalid payment signature" },
           { status: 400 }
@@ -83,6 +98,7 @@ export async function POST(request: Request) {
     }
 
     // 1. Atomic Stock Update & Reservation
+    console.log('[API] Updating stock for order items');
     const updatedProducts = [];
     try {
       for (const item of body.products) {
@@ -101,14 +117,16 @@ export async function POST(request: Request) {
       }
 
       // 2. Create Order
+      console.log('[API] Creating order document');
       const order = await Order.create(body);
       
+      console.log('[API] Order created successfully:', order._id);
       return NextResponse.json({ success: true, data: order }, { status: 201 });
 
     } catch (stockError: any) {
       // Rollback: If any stock update failed or order creation failed
       // We need to increment back the stock for successfully updated products
-      console.error('Order creation failed, rolling back stock:', stockError);
+      console.error('[API] Order creation failed, rolling back stock:', stockError);
       
       for (const item of updatedProducts) {
         await Product.findByIdAndUpdate(
@@ -124,7 +142,11 @@ export async function POST(request: Request) {
     }
 
   } catch (error: any) {
-    console.error('Order API Error:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    console.error('[API] Order API Error:', error);
+    return NextResponse.json({ 
+      success: false, 
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined 
+    }, { status: 500 });
   }
 }
