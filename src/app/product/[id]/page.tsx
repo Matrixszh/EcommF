@@ -23,17 +23,73 @@ async function getProduct(id: string) {
         console.error(`[ProductPage] Invalid product ID format: ${id}`);
         return null;
       }
-      
-      await dbConnect();
-      const product = await Product.findById(id).lean();
-      
-      if (!product) {
-        console.warn(`[ProductPage] Product not found in DB: ${id}`);
-        return null;
+
+      // Check for mock data first if it's a known mock ID
+      const mockProducts: any = [
+        {
+          _id: "000000000000000000000001",
+          name: "Wireless Headphones",
+          description: "Premium noise-canceling headphones for immersive audio.",
+          price: 299.99,
+          images: ["https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800&q=80"],
+          category: "electronics",
+          rating: 4.8,
+          stock: 10
+        },
+        {
+          _id: "000000000000000000000002",
+          name: "Smart Watch Series 5",
+          description: "Stay connected and track your health with style.",
+          price: 399.00,
+          images: ["https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80"],
+          category: "electronics",
+          rating: 4.5,
+          stock: 5
+        },
+        {
+          _id: "000000000000000000000003",
+          name: "Ergonomic Chair",
+          description: "Designed for comfort during long work hours.",
+          price: 199.50,
+          images: ["https://images.unsplash.com/photo-1592078615290-033ee584e267?w=800&q=80"],
+          category: "furniture",
+          rating: 4.7,
+          stock: 0
+        },
+        {
+          _id: "000000000000000000000004",
+          name: "Running Shoes",
+          description: "Lightweight and durable for your daily runs.",
+          price: 129.99,
+          images: ["https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=800&q=80"],
+          category: "sports",
+          rating: 4.6,
+          stock: 15
+        }
+      ];
+
+      const mockProduct = mockProducts.find((p: any) => p._id === id);
+
+      try {
+        await dbConnect();
+        const product = await Product.findById(id).lean();
+
+        if (product) {
+          console.log(`[ProductPage] Product found in DB: ${id}`);
+          return JSON.parse(JSON.stringify(product));
+        }
+      } catch (dbError) {
+        console.error(`[ProductPage] Database error for ID: ${id}`, dbError);
+        // Fall through to mock check
       }
-      
-      console.log(`[ProductPage] Product found in DB: ${id}`);
-      return JSON.parse(JSON.stringify(product));
+
+      if (mockProduct) {
+        console.log(`[ProductPage] Returning mock product for ID: ${id}`);
+        return mockProduct;
+      }
+
+      console.warn(`[ProductPage] Product not found in DB or mock for ID: ${id}`);
+      return null;
     } catch (error) {
       console.error(`[ProductPage] Error fetching product ${id}:`, error);
       // In case of DB error, return null to show 404 or let it bubble up

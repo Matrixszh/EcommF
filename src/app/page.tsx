@@ -37,40 +37,44 @@ async function getFeaturedProducts() {
       // Return mock data if DB connection fails
       return [
         {
-          _id: "1",
+          _id: "000000000000000000000001",
           name: "Wireless Headphones",
           description: "Premium noise-canceling headphones for immersive audio.",
           price: 299.99,
           images: ["https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800&q=80"],
           category: "electronics",
-          rating: 4.8
+          rating: 4.8,
+          stock: 10
         },
         {
-          _id: "2",
+          _id: "000000000000000000000002",
           name: "Smart Watch Series 5",
           description: "Stay connected and track your health with style.",
           price: 399.00,
           images: ["https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&q=80"],
           category: "electronics",
-          rating: 4.5
+          rating: 4.5,
+          stock: 5
         },
         {
-          _id: "3",
+          _id: "000000000000000000000003",
           name: "Ergonomic Chair",
           description: "Designed for comfort during long work hours.",
           price: 199.50,
           images: ["https://images.unsplash.com/photo-1592078615290-033ee584e267?w=800&q=80"],
           category: "furniture",
-          rating: 4.7
+          rating: 4.7,
+          stock: 0
         },
         {
-          _id: "4",
+          _id: "000000000000000000000004",
           name: "Running Shoes",
           description: "Lightweight and durable for your daily runs.",
           price: 129.99,
           images: ["https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=800&q=80"],
           category: "sports",
-          rating: 4.6
+          rating: 4.6,
+          stock: 15
         }
       ];
     }
