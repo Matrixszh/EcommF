@@ -1,5 +1,5 @@
-import dbConnect from '@/lib/mongodb';
-import Product from '@/models/Product';
+import dbConnect from "@/lib/mongodb";
+import Product from "@/models/Product";
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowLeft, Star } from "lucide-react";
@@ -12,51 +12,61 @@ import { notFound } from "next/navigation";
 export const revalidate = 60;
 
 async function getProduct(id: string) {
-  // Use v2 prefix to invalidate old cache and ensure clean state
   const cacheKey = `v2:product:${id}`;
-  
+
   return getOrSetCache(cacheKey, async () => {
     try {
       console.log(`[ProductPage] Fetching product from DB: ${id}`);
-      // Validate ObjectId format to prevent CastError
+
+      // Validate ObjectId format
       if (!id.match(/^[0-9a-fA-F]{24}$/)) {
         console.error(`[ProductPage] Invalid product ID format: ${id}`);
         return null;
       }
-      
+
       await dbConnect();
+
       const product = await Product.findById(id).lean();
-      
+
       if (!product) {
         console.warn(`[ProductPage] Product not found in DB: ${id}`);
         return null;
       }
-      
+
       console.log(`[ProductPage] Product found in DB: ${id}`);
+
       return JSON.parse(JSON.stringify(product));
     } catch (error) {
       console.error(`[ProductPage] Error fetching product ${id}:`, error);
-      // In case of DB error, return null to show 404 or let it bubble up
-      // We choose to return null here to be safe and avoid 500
       return null;
     }
   });
 }
+export default async function ProductPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
 
-export default async function ProductPage({ params }: { params: Promise<{ id: string }> }) {
-  const resolvedParams = await params;
-  console.log(`[ProductPage] Rendering page for ID: ${resolvedParams.id}`);
-  const product = await getProduct(resolvedParams.id);
+  console.log(`[ProductPage] Rendering page for ID: ${id}`);
+
+  const product = await getProduct(id);
 
   if (!product) {
-    console.warn(`[ProductPage] Product is null for ID: ${resolvedParams.id}, triggering notFound()`);
+    console.warn(`[ProductPage] Product is null for ID: ${id}, triggering notFound()`);
     notFound();
   }
 
+  const imageSrc =
+    product.images?.[0] && isValidImageUrl(product.images[0])
+      ? product.images[0]
+      : "/placeholder.svg";
+
   return (
     <div className="container mx-auto px-4 md:px-6 py-10">
-      <Link 
-        href="/products" 
+      <Link
+        href="/products"
         className="inline-flex items-center text-sm text-zinc-500 hover:text-zinc-900 mb-8"
       >
         <ArrowLeft className="mr-2 h-4 w-4" />
@@ -67,9 +77,10 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
         {/* Product Image */}
         <div className="relative aspect-square overflow-hidden rounded-xl bg-zinc-100 dark:bg-zinc-800">
           <Image
-            src={isValidImageUrl(product.images[0]) ? product.images[0] : "/placeholder.svg"}
+            src={imageSrc}
             alt={product.name}
             fill
+            sizes="(max-width: 768px) 100vw, 50vw"
             className="object-cover"
             priority
           />
@@ -82,37 +93,51 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
               {product.category}
             </span>
           </div>
+
           <h1 className="text-3xl md:text-4xl font-bold mb-4">{product.name}</h1>
-          
+
+          {/* Rating */}
           <div className="flex items-center mb-6">
             <div className="flex text-yellow-400 mr-2">
               {[...Array(5)].map((_, i) => (
-                <Star 
-                  key={i} 
-                  className={`h-5 w-5 ${i < Math.floor(product.rating || 0) ? 'fill-current' : 'text-zinc-300 dark:text-zinc-600'}`} 
+                <Star
+                  key={i}
+                  className={`h-5 w-5 ${
+                    i < Math.floor(product.rating || 0)
+                      ? "fill-current"
+                      : "text-zinc-300 dark:text-zinc-600"
+                  }`}
                 />
               ))}
             </div>
+
             <span className="text-sm text-zinc-500 dark:text-zinc-400">
               ({product.rating || 0} rating)
             </span>
           </div>
 
+          {/* Price */}
           <p className="text-3xl font-bold text-indigo-600 dark:text-indigo-400 mb-6">
             ${product.price.toFixed(2)}
           </p>
 
+          {/* Description */}
           <div className="prose prose-zinc dark:prose-invert mb-8">
             <p>{product.description}</p>
           </div>
 
+          {/* Stock + Cart */}
           <div className="mt-auto">
             <div className="flex items-center gap-4 mb-4">
-              <span className={`text-sm font-medium ${product.stock > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {product.stock > 0 ? 'In Stock' : 'Out of Stock'}
+              <span
+                className={`text-sm font-medium ${
+                  product.stock > 0 ? "text-green-600" : "text-red-600"
+                }`}
+              >
+                {product.stock > 0 ? "In Stock" : "Out of Stock"}
               </span>
             </div>
-            
+
             <AddToCartButton product={product} disabled={product.stock <= 0} />
           </div>
         </div>
