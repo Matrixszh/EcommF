@@ -46,7 +46,10 @@ async function getProduct(id: string, requestId: string) {
     } catch (error: any) {
       console.error(`[${new Date().toISOString()}] [ProductPage] [${requestId}] Error fetching product ${id}:`, error);
       if (error.stack) console.error(error.stack);
-      return null;
+      const message = `[${new Date().toISOString()}] [ProductPage] [${requestId}] getProduct_failed id=${id} message=${error?.message ?? String(error)}`;
+      const err = new Error(message);
+      (err as any).cause = error;
+      throw err;
     }
   });
 }

@@ -1,14 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 
 export default function NotFound() {
   const pathname = usePathname();
+  const [clientTime, setClientTime] = useState<string | null>(null);
 
   useEffect(() => {
     const timestamp = new Date().toISOString();
+    setClientTime(timestamp);
     console.warn(`[${timestamp}] [NotFound] 404 Page rendered. Path: ${pathname}`);
     console.error(`[${timestamp}] [NotFound] 404 Error Event for Path: ${pathname}`);
   }, [pathname]);
@@ -36,7 +38,7 @@ export default function NotFound() {
       <div className="mt-12 p-4 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-left text-xs font-mono text-zinc-500 w-full max-w-lg overflow-auto">
         <p>Debug Info:</p>
         <p>Path: {pathname}</p>
-        <p>Time: {new Date().toISOString()}</p>
+        <p>Time: {clientTime ?? "n/a"}</p>
       </div>
     </div>
   );
