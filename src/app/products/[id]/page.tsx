@@ -8,6 +8,9 @@ import { getOrSetCache } from "@/lib/redis";
 import { isValidImageUrl } from "@/lib/utils";
 import { notFound } from "next/navigation";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 // Enable ISR with 60-second revalidation
 export const revalidate = 60;
 

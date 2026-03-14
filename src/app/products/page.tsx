@@ -5,6 +5,9 @@ import Link from "next/link";
 import { Search } from "lucide-react";
 import { getOrSetCache } from "@/lib/redis";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 // Enable ISR with 60-second revalidation (applies when no search params)
 export const revalidate = 60;
 
