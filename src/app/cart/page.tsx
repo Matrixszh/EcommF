@@ -51,7 +51,7 @@ export default function CartPage() {
 
               <div className="flex-1 min-w-0">
                 <Link
-                  href={`/product/${item.product._id}`}
+                  href={`/products/${item.product._id}`}
                   className="text-base font-medium hover:underline line-clamp-1"
                 >
                   {item.product.name}

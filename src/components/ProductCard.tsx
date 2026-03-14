@@ -32,7 +32,7 @@ export default function ProductCard({ product }: ProductCardProps) {
   return (
     <div className="group relative flex flex-col overflow-hidden rounded-lg border bg-white shadow-sm transition-all hover:shadow-md dark:bg-zinc-900 dark:border-zinc-800">
       <Link 
-        href={`/product/${product._id}`} 
+        href={`/products/${product._id}`} 
         className="relative aspect-square overflow-hidden bg-zinc-100 dark:bg-zinc-800"
         onClick={() => {
           console.log(`[${new Date().toISOString()}] [ProductCard] Navigating to product: ${product._id} (${product.name})`);
@@ -56,7 +56,7 @@ export default function ProductCard({ product }: ProductCardProps) {
       <div className="flex flex-1 flex-col p-4">
         <div className="mb-2 flex items-start justify-between gap-2">
           <Link 
-            href={`/product/${product._id}`} 
+            href={`/products/${product._id}`} 
             className="text-lg font-semibold hover:underline line-clamp-1"
             onClick={() => {
               console.log(`[${new Date().toISOString()}] [ProductCard] Navigating to product: ${product._id} (${product.name})`);
