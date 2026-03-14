@@ -6,31 +6,56 @@ import redis, { invalidateCache } from '@/lib/redis';
 
 export const runtime = 'nodejs';
 
+function getRequestId(request: Request) {
+  return (
+    request.headers.get('x-vercel-id') ||
+    request.headers.get('x-request-id') ||
+    request.headers.get('x-amzn-trace-id') ||
+    `${Date.now()}-${Math.random().toString(16).slice(2)}`
+  );
+}
+
+function getLogPrefix(request: Request, requestId: string) {
+  const url = new URL(request.url);
+  return `[${new Date().toISOString()}] [API] [${requestId}] [${request.method}] ${url.pathname}`;
+}
+
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const startTime = Date.now();
+  const requestId = getRequestId(request);
+  const prefix = getLogPrefix(request, requestId);
+  const url = new URL(request.url);
+
   try {
-    await dbConnect();
     const { id } = await params;
-    
-    console.log(`[API] Fetching product: ${id}`);
-    
-    // Validate ID format
-    if (!id || id.length !== 24) {
+    console.log(
+      `${prefix} start id=${id} query=${url.search || '(none)'} referer=${request.headers.get('referer') || '(none)'} ua=${request.headers.get('user-agent') || '(none)'}`
+    );
+
+    if (!id || !/^[0-9a-fA-F]{24}$/.test(id)) {
+      console.warn(`${prefix} invalid_id id=${id}`);
       return NextResponse.json({ success: false, error: 'Invalid product ID' }, { status: 400 });
     }
+
+    console.log(`${prefix} db_connect_start id=${id}`);
+    await dbConnect();
+    console.log(`${prefix} db_connect_ok id=${id}`);
 
     const product = await Product.findById(id).lean();
     
     if (!product) {
-      console.warn(`[API] Product not found: ${id}`);
+      console.warn(`${prefix} not_found id=${id} (${Date.now() - startTime}ms)`);
       return NextResponse.json({ success: false, error: 'Product not found' }, { status: 404 });
     }
 
+    console.log(`${prefix} ok id=${id} (${Date.now() - startTime}ms)`);
     return NextResponse.json({ success: true, data: product });
   } catch (error: any) {
-    console.error('[API] Error fetching product:', error);
+    console.error(`${prefix} error_fetching_product (${Date.now() - startTime}ms)`, error);
+    if (error?.stack) console.error(`${prefix} stack`, error.stack);
     return NextResponse.json({ 
       success: false, 
       error: error.message,
@@ -43,44 +68,56 @@ export async function PUT(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const startTime = Date.now();
+  const requestId = getRequestId(request);
+  const prefix = getLogPrefix(request, requestId);
+
   try {
-    console.log('[API] /api/products/[id] PUT called');
+    console.log(`${prefix} start`);
     const { authorized, reason, user } = await checkAdmin(request);
     if (!authorized) {
-      console.warn(`[API] Unauthorized product update attempt: ${reason}`);
+      console.warn(`${prefix} unauthorized reason=${reason}`);
       return NextResponse.json({ success: false, error: reason }, { status: 401 });
     }
-    console.log(`[API] Admin verified: ${(user as any)?.email}`);
+    console.log(`${prefix} admin_verified email=${(user as any)?.email || '(unknown)'}`);
 
-    await dbConnect();
     const { id } = await params;
     const body = await request.json();
 
-    if (!id || id.length !== 24) {
+    console.log(`${prefix} body_keys=${Object.keys(body || {}).join(',') || '(none)'}`);
+
+    if (!id || !/^[0-9a-fA-F]{24}$/.test(id)) {
+      console.warn(`${prefix} invalid_id id=${id}`);
       return NextResponse.json({ success: false, error: 'Invalid product ID' }, { status: 400 });
     }
     
-    console.log(`[API] Updating product: ${id}`);
+    console.log(`${prefix} db_connect_start id=${id}`);
+    await dbConnect();
+    console.log(`${prefix} db_connect_ok id=${id}`);
+
+    console.log(`${prefix} updating_product id=${id}`);
     const product = await Product.findByIdAndUpdate(id, body, {
       new: true,
       runValidators: true,
     });
 
     if (!product) {
+      console.warn(`${prefix} not_found id=${id} (${Date.now() - startTime}ms)`);
       return NextResponse.json({ success: false, error: 'Product not found' }, { status: 404 });
     }
 
-    // Invalidate caches
-    console.log(`[API] Invalidating caches for product ${id}`);
+    console.log(`${prefix} invalidate_caches_start id=${id}`);
     await Promise.all([
       invalidateCache('v2:products:*'),
-      redis?.del(`v2:product:${id}`).catch(err => console.error('Redis error:', err)),
-      redis?.del('v2:featured_products').catch(err => console.error('Redis error:', err))
+      redis?.del(`v2:product:${id}`).catch(err => console.error(`${prefix} redis_error_del v2:product:${id}`, err)),
+      redis?.del('v2:featured_products').catch(err => console.error(`${prefix} redis_error_del v2:featured_products`, err))
     ]);
 
+    console.log(`${prefix} ok id=${id} (${Date.now() - startTime}ms)`);
     return NextResponse.json({ success: true, data: product });
   } catch (error: any) {
-    console.error('[API] Error updating product:', error);
+    console.error(`${prefix} error_updating_product (${Date.now() - startTime}ms)`, error);
+    if (error?.stack) console.error(`${prefix} stack`, error.stack);
     return NextResponse.json({ 
       success: false, 
       error: error.message,
@@ -93,40 +130,50 @@ export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const startTime = Date.now();
+  const requestId = getRequestId(request);
+  const prefix = getLogPrefix(request, requestId);
+
   try {
-    console.log('[API] /api/products/[id] DELETE called');
+    console.log(`${prefix} start`);
     const { authorized, reason, user } = await checkAdmin(request);
     if (!authorized) {
-      console.warn(`[API] Unauthorized product deletion attempt: ${reason}`);
+      console.warn(`${prefix} unauthorized reason=${reason}`);
       return NextResponse.json({ success: false, error: reason }, { status: 401 });
     }
-    console.log(`[API] Admin verified: ${(user as any)?.email}`);
+    console.log(`${prefix} admin_verified email=${(user as any)?.email || '(unknown)'}`);
 
-    await dbConnect();
     const { id } = await params;
 
-    if (!id || id.length !== 24) {
+    if (!id || !/^[0-9a-fA-F]{24}$/.test(id)) {
+      console.warn(`${prefix} invalid_id id=${id}`);
       return NextResponse.json({ success: false, error: 'Invalid product ID' }, { status: 400 });
     }
     
-    console.log(`[API] Deleting product: ${id}`);
+    console.log(`${prefix} db_connect_start id=${id}`);
+    await dbConnect();
+    console.log(`${prefix} db_connect_ok id=${id}`);
+
+    console.log(`${prefix} deleting_product id=${id}`);
     const product = await Product.findByIdAndDelete(id);
 
     if (!product) {
+      console.warn(`${prefix} not_found id=${id} (${Date.now() - startTime}ms)`);
       return NextResponse.json({ success: false, error: 'Product not found' }, { status: 404 });
     }
 
-    // Invalidate caches
-    console.log(`[API] Invalidating caches for product ${id}`);
+    console.log(`${prefix} invalidate_caches_start id=${id}`);
     await Promise.all([
       invalidateCache('v2:products:*'),
-      redis?.del(`v2:product:${id}`).catch(err => console.error('Redis error:', err)),
-      redis?.del('v2:featured_products').catch(err => console.error('Redis error:', err))
+      redis?.del(`v2:product:${id}`).catch(err => console.error(`${prefix} redis_error_del v2:product:${id}`, err)),
+      redis?.del('v2:featured_products').catch(err => console.error(`${prefix} redis_error_del v2:featured_products`, err))
     ]);
 
+    console.log(`${prefix} ok id=${id} (${Date.now() - startTime}ms)`);
     return NextResponse.json({ success: true, data: {} });
   } catch (error: any) {
-    console.error('[API] Error deleting product:', error);
+    console.error(`${prefix} error_deleting_product (${Date.now() - startTime}ms)`, error);
+    if (error?.stack) console.error(`${prefix} stack`, error.stack);
     return NextResponse.json({ 
       success: false, 
       error: error.message, 

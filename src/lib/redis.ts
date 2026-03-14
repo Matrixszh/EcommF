@@ -13,7 +13,7 @@ if (!redis && redisUrl && redisUrl.startsWith('http')) {
   // Ensure we have a token if required, or assume it's embedded in URL?
   // Upstash client usually needs url and token.
   if (!redisToken) {
-    console.warn('[Redis] REST URL found but no token. Upstash Redis might fail if authentication is required.');
+    console.warn(`[${new Date().toISOString()}] [Redis] REST URL found but no token. Upstash Redis might fail if authentication is required.`);
   }
   
   try {
@@ -22,15 +22,15 @@ if (!redis && redisUrl && redisUrl.startsWith('http')) {
       token: redisToken || '',
       // Automatic deserialization is true by default, but we'll handle it carefully
     });
-    console.log('[Redis] Client initialized (Upstash HTTP)');
+    console.log(`[${new Date().toISOString()}] [Redis] Client initialized (Upstash HTTP)`);
     global.redisClient = redis;
   } catch (err) {
-    console.warn('[Redis] Failed to initialize Upstash client:', err);
+    console.warn(`[${new Date().toISOString()}] [Redis] Failed to initialize Upstash client:`, err);
   }
 } else if (redisUrl && !redisUrl.startsWith('http')) {
-  console.warn('[Redis] REDIS_URL is not an HTTP URL. @upstash/redis requires a REST URL (starting with http/https). Please set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN.');
+  console.warn(`[${new Date().toISOString()}] [Redis] REDIS_URL is not an HTTP URL. @upstash/redis requires a REST URL (starting with http/https). Please set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN.`);
 } else if (!redisUrl) {
-  console.warn('[Redis] No Redis URL found (UPSTASH_REDIS_REST_URL or REDIS_URL), caching disabled');
+  console.warn(`[${new Date().toISOString()}] [Redis] No Redis URL found (UPSTASH_REDIS_REST_URL or REDIS_URL), caching disabled`);
 }
 
 export default redis;
@@ -46,10 +46,10 @@ export async function invalidateCache(pattern: string) {
     
     if (keys.length > 0) {
       await redis.del(...keys);
-      console.log(`[Redis] Invalidated ${keys.length} keys for pattern ${pattern}`);
+      console.log(`[${new Date().toISOString()}] [Redis] Invalidated ${keys.length} keys for pattern ${pattern}`);
     }
   } catch (error) {
-    console.error(`[Redis] Error invalidating pattern ${pattern}:`, error);
+    console.error(`[${new Date().toISOString()}] [Redis] Error invalidating pattern ${pattern}:`, error);
   }
 }
 
@@ -67,7 +67,7 @@ export async function getOrSetCache<T>(
     const cachedData = await redis.get<T>(key);
 
     if (cachedData !== null && cachedData !== undefined) {
-      console.log(`[CACHE HIT] ${key}`);
+      console.log(`[${new Date().toISOString()}] [CACHE HIT] ${key} (Type: ${typeof cachedData})`);
       
       // If cachedData is a string but we expect an object, try parsing
       if (typeof cachedData === 'string') {
@@ -76,14 +76,15 @@ export async function getOrSetCache<T>(
           if ((cachedData as string).startsWith('{') || (cachedData as string).startsWith('[')) {
              return JSON.parse(cachedData);
           }
-        } catch (e) {
+        } catch {
           // Not JSON, return as is
+          console.warn(`[${new Date().toISOString()}] [Redis] Failed to parse cached string as JSON for key ${key}`);
         }
       }
       return cachedData;
     }
 
-    console.log(`[CACHE MISS] ${key}`);
+    console.log(`[${new Date().toISOString()}] [CACHE MISS] ${key}`);
     const freshData = await fetcher();
 
     if (freshData !== null && freshData !== undefined) {
@@ -96,7 +97,7 @@ export async function getOrSetCache<T>(
 
     return freshData;
   } catch (error) {
-    console.error(`Redis cache error for key ${key}:`, error instanceof Error ? error.message : error);
+    console.error(`[${new Date().toISOString()}] [Redis] Cache error for key ${key}:`, error instanceof Error ? error.message : error);
     return fetcher();
   }
 }

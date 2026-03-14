@@ -232,7 +232,7 @@ export default function AdminProducts() {
             Products Management
           </h1>
           <p className="text-sm text-zinc-500 mt-1">
-            Manage your store's inventory
+            Manage your store&apos;s inventory
           </p>
         </div>
         <button
@@ -260,7 +260,7 @@ export default function AdminProducts() {
               {products.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-6 py-12 text-center text-zinc-500">
-                    No products found. Click "Add Product" to create one.
+                    No products found. Click &quot;Add Product&quot; to create one.
                   </td>
                 </tr>
               ) : (
